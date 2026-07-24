@@ -5,8 +5,8 @@ profile later, but should preserve these invariants:
 
 1. Store the profile at `<root>\tools\chatgpt-hybrid-mcp\profile.json`.
 2. Give every profile a unique lowercase ID and unique HTTP metadata port.
-3. Set `permissionPreset` to `readonly`, `coding`, or `workstation`. Profiles
-   without the field retain the legacy `workstation` behavior.
+3. Set `permissionPreset` to `readonly` or `workstation`. Profiles without the
+   field retain the normal `workstation` behavior.
 4. Include at least one bounded identity marker inside that root.
 5. Hash the exact UTF-8 profile bytes with SHA-256.
 6. Add the absolute profile path and hash to `runtime\profile_registry.json`.

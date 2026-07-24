@@ -58,27 +58,18 @@ function serverInstructions(context: ProjectContext): string {
     `You are the ${context.profile.displayName} workstation agent (${context.profile.id}).`,
     `Permission preset: ${context.profile.permissionPreset}.`,
     `Start from ${context.defaultWorkingDirectory}.`,
-    context.profile.permissionPreset === "workstation"
-      ? "The exposed filesystem and PowerShell tools run as the current Windows user and can reach unrelated workstation paths, except roots assigned to another registered profile."
-      : "The exposed filesystem tools run as the current Windows user and can reach unrelated workstation paths, except roots assigned to another registered profile.",
+    context.profile.permissionPreset === "readonly"
+      ? "The exposed filesystem tools run as the current Windows user and can reach unrelated workstation paths, except roots assigned to another registered profile. File mutation and PowerShell tools are not registered."
+      : "The exposed filesystem and PowerShell tools run as the current Windows user and can reach unrelated workstation paths, except roots assigned to another registered profile.",
     context.profile.permissionPreset === "readonly"
       ? `Call workstation_context and review every bootstrapEntries item before relying on profile guidance: ${bootstrap}.`
-      : context.profile.permissionPreset === "coding"
-        ? `Before the first file mutation, call workstation_context and review every bootstrapEntries item: ${bootstrap}.`
-        : `Before the first mutation or shell command, call workstation_context and review every bootstrapEntries item: ${bootstrap}.`,
+      : `Before the first mutation or shell command, call workstation_context and review every bootstrapEntries item: ${bootstrap}.`,
     context.profile.permissionPreset === "readonly"
-      ? "This profile is read-only. File mutation and PowerShell process tools are not exposed."
-      : context.profile.permissionPreset === "coding"
-        ? "Direct UTF-8 text writes are enabled after workstation_context. PowerShell process tools are not exposed in coding mode."
-        : "Direct UTF-8 text writes and PowerShell process tools are enabled after workstation_context.",
-    context.profile.permissionPreset === "readonly"
-      ? "Refresh workstation_context after bootstrap files change."
-      : context.profile.permissionPreset === "coding"
-        ? "Pass the returned contextRevision to write_text_file and replace_text. Refresh it after bootstrap files change."
-        : "Pass the returned contextRevision to write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
+      ? "This profile is deliberately locked to inspection only."
+      : "Pass the returned contextRevision to write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
     "When continuing existing work, call project_resume after workstation_context and inspect only task-relevant changed files.",
     context.profile.permissionPreset === "workstation"
-      ? "Use direct read and search tools for bounded inspection. Use shell_start for Git, builds, tests, applications, and other CLI work."
+      ? "Use direct read and search tools for bounded inspection. When the user asks to change, build, test, or run something, use the available mutation and shell tools directly without asking for a separate mode change."
       : "Use direct read and search tools for bounded inspection.",
     context.profile.permissionPreset === "workstation"
       ? "Poll shell_status and shell_output before claiming a command finished. Commands are never replayed automatically after a disconnect."
@@ -129,7 +120,7 @@ export function createServer(context: ProjectContext): McpServer {
     { name: context.profile.serverName, version: "1.1.0" },
     { instructions: serverInstructions(context) },
   );
-  const canWrite = context.profile.permissionPreset !== "readonly";
+  const canWrite = context.profile.permissionPreset === "workstation";
   const canShell = context.profile.permissionPreset === "workstation";
 
   server.registerTool(
@@ -139,7 +130,7 @@ export function createServer(context: ProjectContext): McpServer {
       description: "Read the profile identity, complete bootstrap guidance, current context revision, platform, and actual access boundary before a mutation or shell command.",
       inputSchema: {},
       outputSchema: {
-        capability: z.enum(["workstation_readonly", "workstation_coding", "workstation_full"]),
+        capability: z.enum(["workstation_readonly", "workstation_full"]),
         permissionPreset: z.enum(PERMISSION_PRESETS),
         profileId: z.string(),
         displayName: z.string(),

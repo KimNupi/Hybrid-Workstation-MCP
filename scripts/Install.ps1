@@ -3,8 +3,8 @@ param(
   [string]$WorkspaceRoot = (Join-Path $env:USERPROFILE "Hybrid Workstation"),
   [string]$ProfileId = "workstation",
   [string]$DisplayName = "Hybrid Workstation",
-  [ValidateSet("readonly", "coding", "workstation")]
-  [string]$PermissionPreset = "coding",
+  [ValidateSet("readonly", "workstation")]
+  [string]$PermissionPreset = "workstation",
   [switch]$Force,
   [switch]$SkipTunnelDownload,
   [switch]$NoDesktopShortcut

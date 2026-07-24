@@ -48,9 +48,9 @@ try {
     throw "Registry hash was not updated with the profile."
   }
 
-  & $SetScript -ProfileId "preset-test" -PermissionPreset "coding" | Out-Null
+  & $SetScript -ProfileId "preset-test" -PermissionPreset "workstation" | Out-Null
   $ObservedProfile = Get-Content -Raw -LiteralPath $ProfilePath | ConvertFrom-Json
-  if ([string]$ObservedProfile.permissionPreset -cne "coding") { throw "coding preset was not persisted." }
+  if ([string]$ObservedProfile.permissionPreset -cne "workstation") { throw "workstation preset was not persisted." }
 
   Write-Output "Permission preset update test passed."
 } finally {

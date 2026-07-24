@@ -55,10 +55,6 @@ describe("permission presets", () => {
     await expect(listedTools("readonly")).resolves.toEqual([...readTools].sort());
   });
 
-  it("adds guarded text mutation in coding mode without PowerShell", async () => {
-    await expect(listedTools("coding")).resolves.toEqual([...readTools, ...writeTools].sort());
-  });
-
   it("preserves the full twelve-tool workstation mode", async () => {
     await expect(listedTools("workstation")).resolves.toEqual([...readTools, ...writeTools, ...shellTools].sort());
   });
