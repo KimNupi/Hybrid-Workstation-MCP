@@ -368,7 +368,7 @@ function Get-HybridRegistry {
         throw "Hybrid profile $ProfileId has an invalid displayName."
       }
       $PermissionPreset = if ($null -eq $Profile.PSObject.Properties["permissionPreset"]) { "workstation" } else { [string]$Profile.permissionPreset }
-      if ($PermissionPreset -cnotin @("readonly", "coding", "workstation")) {
+      if ($PermissionPreset -cnotin @("readonly", "workstation")) {
         throw "Hybrid profile $ProfileId has an invalid permissionPreset."
       }
 

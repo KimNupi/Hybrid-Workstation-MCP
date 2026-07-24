@@ -15,16 +15,13 @@ tool is intentionally powerful and is not an operating-system sandbox.
 
 ## Permission presets
 
-New installations default to `coding`. Use the narrowest preset that completes
-the task:
+New installations default to `workstation`. Use `readonly` only when you deliberately want to lock a connection to inspection:
 
 - `readonly` exposes inspection tools only. It prevents MCP file mutation and
   command execution, but readable files may still contain private information.
-- `coding` adds SHA-guarded UTF-8 text creation and replacement. It does not
-  expose PowerShell process tools.
-- `workstation` adds arbitrary PowerShell execution as the current Windows user.
-  Enable it only for tasks that genuinely require builds, Git commands, external
-  programs, or other command-line work.
+- `workstation` is the normal mode. It adds text mutation and arbitrary PowerShell
+  execution as the current Windows user, allowing an uninterrupted inspect → edit
+  → build/test workflow.
 
 A permission preset is a tool-exposure boundary, not an OS sandbox. Windows ACLs
 and UAC remain the actual machine boundary.

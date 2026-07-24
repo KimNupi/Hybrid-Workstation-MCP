@@ -23,5 +23,5 @@ and operational logs.
 The registry supports multiple non-overlapping profile roots. Each profile hash
 is pinned. A selected profile cannot use direct filesystem or shell tools inside
 another registered profile's root. The profile permission preset determines
-whether the server registers six read tools, eight read/write tools, or the full
-twelve-tool workstation surface.
+whether the server registers six read-only tools or the full twelve-tool
+workstation surface.

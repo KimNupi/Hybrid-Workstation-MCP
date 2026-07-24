@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
   [string]$ProfileId = "workstation",
-  [ValidateSet("readonly", "coding", "workstation")]
+  [ValidateSet("readonly", "workstation")]
   [string]$PermissionPreset
 )
 
@@ -10,14 +10,12 @@ Set-StrictMode -Version 3.0
 . (Join-Path $PSScriptRoot "profile-registry.ps1")
 
 if ([string]::IsNullOrWhiteSpace($PermissionPreset)) {
-  Write-Host "1. Read-only: inspect files only"
-  Write-Host "2. Coding: inspect and edit UTF-8 text files; no PowerShell"
-  Write-Host "3. Workstation: all tools, including PowerShell"
+  Write-Host "1. Read-only lock: inspect only"
+  Write-Host "2. Workstation: normal full operation"
   $Choice = Read-Host "Select permission preset"
   $PermissionPreset = switch ($Choice) {
     "1" { "readonly" }
-    "2" { "coding" }
-    "3" { "workstation" }
+    "2" { "workstation" }
     default { throw "No valid permission preset was selected." }
   }
 }
@@ -97,7 +95,7 @@ try {
     throw "The permission preset update could not be verified."
   }
   Write-Output "Permission preset changed: $CurrentPreset -> $PermissionPreset"
-  Write-Output "Start the tunnel again for the new tool set to appear in ChatGPT."
+  Write-Output "The new tool set takes effect when the tunnel starts."
 } finally {
   Exit-HybridTunnelOperationLock -Lock $Lock
 }

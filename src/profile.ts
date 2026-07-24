@@ -14,7 +14,7 @@ const PROJECT_CONFIG_DIRECTORY = "chatgpt-hybrid-mcp";
 const PROJECT_TOOLS_DIRECTORY = "tools";
 const REGISTRY_ENVIRONMENT_KEY = "CHATGPT_HYBRID_PROFILE_REGISTRY";
 
-export const PERMISSION_PRESETS = ["readonly", "coding", "workstation"] as const;
+export const PERMISSION_PRESETS = ["readonly", "workstation"] as const;
 export type PermissionPreset = typeof PERMISSION_PRESETS[number];
 const permissionPresetSchema = z.enum(PERMISSION_PRESETS).default("workstation");
 

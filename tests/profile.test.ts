@@ -172,7 +172,7 @@ describe("trusted identity profile", () => {
 
   it("accepts explicit permission presets and rejects invalid values", async () => {
     const fixture = await makeFixture();
-    for (const permissionPreset of ["readonly", "coding", "workstation"] as const) {
+    for (const permissionPreset of ["readonly", "workstation"] as const) {
       await writeFixtureProfile(fixture, { ...fixture.profile, permissionPreset });
       const context = await loadProjectProfile("test-project", fixture.options);
       expect(context.profile.permissionPreset).toBe(permissionPreset);

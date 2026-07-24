@@ -10,8 +10,7 @@ output, and cancellation.
 
 ## Release status
 
-Version 1.1 adds explicit `readonly`, `coding`, and `workstation` permission
-presets. Its source, tests, setup flow, and release package have completed
+Version 1.1 adds explicit `readonly` and `workstation` permission presets. Its source, tests, setup flow, and release package have completed
 automated validation on Windows x64. A clean machine with a real OpenAI Secure
 MCP Tunnel is still recommended before wider deployment.
 
@@ -41,8 +40,8 @@ Official setup references:
    private.
 4. Double-click `Configure Tunnel.cmd`, then enter your own `tunnel_id` and
    runtime API key.
-5. The new profile starts in `coding` mode. Double-click `Hybrid MCP Control.cmd`
-   to review or change the permission preset, then choose `Start`.
+5. The new profile starts in normal `workstation` mode. Double-click `Hybrid MCP Control.cmd`
+   and choose `Start`. Use the permission menu only when you deliberately want a read-only lock.
 6. In ChatGPT, enable **Settings → Security and login → Developer mode**.
 7. Open **Settings → Plugins**, create a developer-mode app, select **Tunnel**,
    and choose the same tunnel.
@@ -56,17 +55,17 @@ Windows account. Windows ACLs and UAC remain the real machine boundary.
 
 ## Permission presets
 
-- `readonly`: six inspection tools. File mutation and PowerShell tools are not
-  exposed.
-- `coding`: the six inspection tools plus two SHA-guarded UTF-8 text mutation
-  tools. PowerShell tools are not exposed. This is the default for new installs.
-- `workstation`: all twelve tools, including asynchronous PowerShell execution,
-  status, output, and cancellation.
+- `workstation` (default): normal operation with all twelve tools. ChatGPT can
+  inspect, edit, build, test, and run commands as the conversation naturally
+  progresses. A separate mode approval is not required for each task.
+- `readonly`: an optional deliberate lock exposing only six inspection tools.
+  Use it when you specifically want analysis with no local mutation or command
+  execution.
 
-The presets control which MCP tools ChatGPT can call. They are not an operating-
-system sandbox: exposed tools still run with the current Windows user permissions,
-and readable files can contain sensitive information. Stop the tunnel before
-changing a preset, then start it again.
+The preset is a coarse connection-level lock, not a per-action confirmation
+system or an operating-system sandbox. The control menu automatically stops and
+restarts an active tunnel when changing the lock. Most users should leave it on
+`workstation`.
 
 ## Runtime behavior
 

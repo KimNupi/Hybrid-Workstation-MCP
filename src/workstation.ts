@@ -5,7 +5,6 @@ import type { ProjectContext } from "./profile.js";
 
 export const PERMISSION_CAPABILITIES = Object.freeze({
   readonly: "workstation_readonly",
-  coding: "workstation_coding",
   workstation: "workstation_full",
 } as const);
 export type WorkstationPathScope = "exact" | "tree";

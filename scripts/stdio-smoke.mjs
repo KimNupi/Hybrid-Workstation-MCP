@@ -32,7 +32,7 @@ const { loadProjectProfile } = await import("../dist/profile.js");
 const context = await loadProjectProfile(profileId);
 const expectedTools = [
   ...readTools,
-  ...(context.profile.permissionPreset === "readonly" ? [] : writeTools),
+  ...(context.profile.permissionPreset === "workstation" ? writeTools : []),
   ...(context.profile.permissionPreset === "workstation" ? shellTools : []),
 ].sort();
 const tempRoot = await mkdtemp(join(tmpdir(), `hybrid-workstation-stdio-${profileId}-`));
