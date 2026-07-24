@@ -18,6 +18,7 @@ if ($Online) {
 [pscustomobject]@{
   ok = $true
   profileId = $Profile.Id
+  permissionPreset = $Profile.PermissionPreset
   profileRoot = $Profile.RepoRoot
   node = $Stdio.NodePath
   tunnelClient = $TunnelExecutable

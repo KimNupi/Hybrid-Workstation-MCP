@@ -18,6 +18,7 @@ async function fixture(bootstrapFiles: readonly string[] = ["AGENTS.md", "docs/H
     displayName: "Test Profile",
     appName: "Test Workstation",
     serverName: "test-workstation",
+    permissionPreset: "workstation",
     defaultWorkingDirectoryRelative: ".",
     httpPort: 23003,
     bootstrapFiles: Object.freeze([...bootstrapFiles]),
@@ -44,6 +45,8 @@ describe("workstation bootstrap context", () => {
     const first = await getWorkstationContext(context);
     const second = await getWorkstationContext(context);
 
+    expect(first.capability).toBe("workstation_full");
+    expect(first.permissionPreset).toBe("workstation");
     expect(first.contextRevision).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.contextRevision).toBe(second.contextRevision);
     expect(first.bootstrapEntries.map((entry) => entry.relativePath)).toEqual(["AGENTS.md", "docs/HANDOFF.md"]);

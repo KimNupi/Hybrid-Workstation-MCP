@@ -9,9 +9,9 @@ tunnel-client (outbound HTTPS, manual start)
         |
 stdio: node dist/stdio.js --profile workstation
         |
-profile registry + profile SHA-256 + identity marker
+profile registry + profile SHA-256 + identity marker + permission preset
         |
-filesystem / Git resume / PowerShell tools
+permission-filtered filesystem / Git resume / PowerShell tools
 ```
 
 The engine and generated runtime state are separate. The engine lives in this
@@ -22,4 +22,6 @@ and operational logs.
 
 The registry supports multiple non-overlapping profile roots. Each profile hash
 is pinned. A selected profile cannot use direct filesystem or shell tools inside
-another registered profile's root.
+another registered profile's root. The profile permission preset determines
+whether the server registers six read tools, eight read/write tools, or the full
+twelve-tool workstation surface.

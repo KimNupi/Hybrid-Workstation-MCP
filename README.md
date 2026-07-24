@@ -3,16 +3,17 @@
 A Windows package that connects one general-purpose local workstation profile
 to a ChatGPT developer-mode app through OpenAI Secure MCP Tunnel.
 
-The package exposes twelve bounded MCP tools for bootstrap context, Git resume
-snapshots, directory and text search, text and image reads, SHA-guarded UTF-8
-writes, and asynchronous PowerShell jobs with status, output, and cancellation.
+The package exposes a permission-selected set of bounded MCP tools for bootstrap
+context, Git resume snapshots, directory and text search, text and image reads,
+SHA-guarded UTF-8 writes, and optional asynchronous PowerShell jobs with status,
+output, and cancellation.
 
 ## Release status
 
-Version 1.0 is the first public release. Its source, tests, setup flow, and
-release package have completed automated validation on Windows x64. A clean
-machine with a real OpenAI Secure MCP Tunnel is still recommended before wider
-deployment.
+Version 1.1 adds explicit `readonly`, `coding`, and `workstation` permission
+presets. Its source, tests, setup flow, and release package have completed
+automated validation on Windows x64. A clean machine with a real OpenAI Secure
+MCP Tunnel is still recommended before wider deployment.
 
 ## Requirements
 
@@ -40,7 +41,8 @@ Official setup references:
    private.
 4. Double-click `Configure Tunnel.cmd`, then enter your own `tunnel_id` and
    runtime API key.
-5. Double-click `Hybrid MCP Control.cmd` and choose `Start`.
+5. The new profile starts in `coding` mode. Double-click `Hybrid MCP Control.cmd`
+   to review or change the permission preset, then choose `Start`.
 6. In ChatGPT, enable **Settings → Security and login → Developer mode**.
 7. Open **Settings → Plugins**, create a developer-mode app, select **Tunnel**,
    and choose the same tunnel.
@@ -51,6 +53,20 @@ The default operating profile is created at `%USERPROFILE%\Hybrid Workstation`.
 It is a small Git repository containing durable instructions and the local
 profile manifest. The profile can access other paths available to the current
 Windows account. Windows ACLs and UAC remain the real machine boundary.
+
+## Permission presets
+
+- `readonly`: six inspection tools. File mutation and PowerShell tools are not
+  exposed.
+- `coding`: the six inspection tools plus two SHA-guarded UTF-8 text mutation
+  tools. PowerShell tools are not exposed. This is the default for new installs.
+- `workstation`: all twelve tools, including asynchronous PowerShell execution,
+  status, output, and cancellation.
+
+The presets control which MCP tools ChatGPT can call. They are not an operating-
+system sandbox: exposed tools still run with the current Windows user permissions,
+and readable files can contain sensitive information. Stop the tunnel before
+changing a preset, then start it again.
 
 ## Runtime behavior
 
@@ -70,6 +86,7 @@ Windows account. Windows ACLs and UAC remain the real machine boundary.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Install.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Configure-Tunnel.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Doctor.ps1 -Online
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Set-Permission-Preset.ps1 -PermissionPreset readonly
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action start
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action status
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action stop

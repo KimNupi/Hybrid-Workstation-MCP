@@ -3,6 +3,8 @@ param(
   [string]$WorkspaceRoot = (Join-Path $env:USERPROFILE "Hybrid Workstation"),
   [string]$ProfileId = "workstation",
   [string]$DisplayName = "Hybrid Workstation",
+  [ValidateSet("readonly", "coding", "workstation")]
+  [string]$PermissionPreset = "coding",
   [switch]$Force,
   [switch]$SkipTunnelDownload,
   [switch]$NoDesktopShortcut
@@ -58,6 +60,7 @@ $Profile = [ordered]@{
   displayName = $DisplayName
   appName = $DisplayName
   serverName = "$ProfileId-chatgpt-workstation"
+  permissionPreset = $PermissionPreset
   defaultWorkingDirectoryRelative = "."
   httpPort = 2098
   bootstrapFiles = @("AGENTS.md", "README.md", "WORKSTATION_POLICY.md")
@@ -115,4 +118,5 @@ if (-not $NoDesktopShortcut) {
 
 Write-Output "Hybrid Workstation MCP core installed."
 Write-Output "Profile root: $WorkspaceRoot"
+Write-Output "Permission preset: $PermissionPreset"
 Write-Output "Next: run 'Configure Tunnel.cmd' and enter your own tunnel_id and runtime API key."

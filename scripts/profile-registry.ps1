@@ -367,6 +367,11 @@ function Get-HybridRegistry {
       ) {
         throw "Hybrid profile $ProfileId has an invalid displayName."
       }
+      $PermissionPreset = if ($null -eq $Profile.PSObject.Properties["permissionPreset"]) { "workstation" } else { [string]$Profile.permissionPreset }
+      if ($PermissionPreset -cnotin @("readonly", "coding", "workstation")) {
+        throw "Hybrid profile $ProfileId has an invalid permissionPreset."
+      }
+
       $HttpPort = 0
       if (
         $Profile.httpPort -is [string] -or
@@ -384,6 +389,7 @@ function Get-HybridRegistry {
       [pscustomobject]@{
         Id = $ProfileId
         DisplayName = $Profile.displayName
+        PermissionPreset = $PermissionPreset
         HttpPort = $HttpPort
         ProfilePath = $ProfileFile.FullName
         ProfileSha256 = $ObservedHash

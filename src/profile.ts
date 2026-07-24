@@ -14,6 +14,10 @@ const PROJECT_CONFIG_DIRECTORY = "chatgpt-hybrid-mcp";
 const PROJECT_TOOLS_DIRECTORY = "tools";
 const REGISTRY_ENVIRONMENT_KEY = "CHATGPT_HYBRID_PROFILE_REGISTRY";
 
+export const PERMISSION_PRESETS = ["readonly", "coding", "workstation"] as const;
+export type PermissionPreset = typeof PERMISSION_PRESETS[number];
+const permissionPresetSchema = z.enum(PERMISSION_PRESETS).default("workstation");
+
 const profileRelativePathSchema = z.string().trim().min(1).max(1024);
 
 const profileSchema = z.object({
@@ -21,6 +25,7 @@ const profileSchema = z.object({
   displayName: z.string().trim().min(1).max(80),
   appName: z.string().trim().min(1).max(80),
   serverName: z.string().regex(/^[a-z0-9][a-z0-9-]{0,127}$/),
+  permissionPreset: permissionPresetSchema,
   defaultWorkingDirectoryRelative: profileRelativePathSchema,
   httpPort: z.number().int().min(1024).max(65_535),
   bootstrapFiles: z.array(profileRelativePathSchema).max(32),

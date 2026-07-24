@@ -3,7 +3,11 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ProjectContext } from "./profile.js";
 
-export const WORKSTATION_CAPABILITY = "workstation_full" as const;
+export const PERMISSION_CAPABILITIES = Object.freeze({
+  readonly: "workstation_readonly",
+  coding: "workstation_coding",
+  workstation: "workstation_full",
+} as const);
 export type WorkstationPathScope = "exact" | "tree";
 const MAX_BOOTSTRAP_FILE_BYTES = 128 * 1024;
 const MAX_BOOTSTRAP_TOTAL_BYTES = 256 * 1024;
@@ -68,9 +72,10 @@ async function loadBootstrapEntries(context: ProjectContext): Promise<readonly B
   return Object.freeze(entries);
 }
 
-function revisionFor(profileId: string, entries: readonly BootstrapEntry[]): string {
+function revisionFor(context: ProjectContext, entries: readonly BootstrapEntry[]): string {
   return sha256(JSON.stringify({
-    profileId,
+    profileId: context.profile.id,
+    permissionPreset: context.profile.permissionPreset,
     files: entries.map((entry) => ({ relativePath: entry.relativePath, sha256: entry.sha256 })),
   }));
 }
@@ -78,7 +83,7 @@ function revisionFor(profileId: string, entries: readonly BootstrapEntry[]): str
 export async function getBootstrapContext(context: ProjectContext) {
   const entries = await loadBootstrapEntries(context);
   return {
-    contextRevision: revisionFor(context.profile.id, entries),
+    contextRevision: revisionFor(context, entries),
     bootstrapEntries: entries,
   } as const;
 }
@@ -161,7 +166,8 @@ export async function resolveAuthorizedWorkstationPath(
 export async function getWorkstationContext(context: ProjectContext) {
   const bootstrap = await getBootstrapContext(context);
   return {
-    capability: WORKSTATION_CAPABILITY,
+    capability: PERMISSION_CAPABILITIES[context.profile.permissionPreset],
+    permissionPreset: context.profile.permissionPreset,
     profileId: context.profile.id,
     displayName: context.profile.displayName,
     appName: context.profile.appName,
