@@ -96,4 +96,5 @@ See [SECURITY.md](SECURITY.md) before enabling the shell tools, and
 
 ## License
 
-Hybrid Workstation MCP is released under the [MIT License](LICENSE).
+Hybrid Workstation MCP is released under the
+[MIT No Attribution License (MIT-0)](LICENSE).
