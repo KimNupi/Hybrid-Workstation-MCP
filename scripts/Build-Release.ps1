@@ -15,7 +15,7 @@ $HashPath = "$ArchivePath.sha256"
 $StagingParent = Join-Path $env:TEMP ("HybridMcpStarter-Release-" + [guid]::NewGuid().ToString("N"))
 $StagingRoot = Join-Path $StagingParent "Hybrid Workstation MCP Starter"
 $Include = @(
-  ".gitignore", "AGENTS.md", "Configure Tunnel.cmd", "Hybrid MCP Control.cmd", "Install.cmd",
+  ".gitattributes", ".gitignore", "AGENTS.md", "Configure Tunnel.cmd", "Hybrid MCP Control.cmd", "Install.cmd",
   "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json",
   "tsconfig.json", "docs", "scripts", "src", "templates", "tests"
 )
