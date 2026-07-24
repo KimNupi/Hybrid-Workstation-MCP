@@ -26,6 +26,6 @@ tool is intentionally powerful and is not an operating-system sandbox.
 
 ## Reporting
 
-Before public release, add a private vulnerability-reporting contact and a
-supported-version policy. Do not report tunnel runtime keys or private logs in a
-public issue.
+Use the repository's **Security** tab to report a vulnerability privately. Do
+not report tunnel runtime keys or private logs in a public issue. Version 1.0 is
+the currently supported release.

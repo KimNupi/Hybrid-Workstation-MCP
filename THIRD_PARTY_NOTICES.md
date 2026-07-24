@@ -1,7 +1,7 @@
 # Third-party notices
 
-Hybrid Workstation MCP does not vendor npm dependency source code in Git. `npm ci` installs
-the versions pinned by `package-lock.json`.
+Hybrid Workstation MCP does not vendor npm dependency source code in Git.
+`npm ci` installs the versions pinned by `package-lock.json`.
 
 | Component | Version | License |
 |---|---:|---|
@@ -15,4 +15,4 @@ the versions pinned by `package-lock.json`.
 The installer downloads the pinned official Windows x64 `tunnel-client`
 release from `openai/tunnel-client` and verifies both its release archive and
 executable SHA-256 before installation. Review the upstream license texts and
-dependency graph again before a public release.
+dependency graph whenever dependencies are updated.

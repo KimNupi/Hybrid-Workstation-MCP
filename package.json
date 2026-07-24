@@ -2,6 +2,7 @@
   "name": "hybrid-workstation-mcp",
   "version": "1.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "description": "A Windows workstation MCP for ChatGPT developer-mode apps over Secure MCP Tunnel.",
   "scripts": {

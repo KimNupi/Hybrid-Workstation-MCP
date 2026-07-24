@@ -18,7 +18,7 @@ $StagingParent = Join-Path $env:TEMP ("HybridMcp-Release-" + [guid]::NewGuid().T
 $StagingRoot = Join-Path $StagingParent "Hybrid-Workstation-MCP"
 $Include = @(
   ".gitattributes", ".gitignore", "AGENTS.md", "Configure Tunnel.cmd", "Hybrid MCP Control.cmd", "Install.cmd",
-  "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json",
+  "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "package.json", "package-lock.json",
   "tsconfig.json", "docs", "scripts", "src", "templates", "tests"
 )
 

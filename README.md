@@ -7,13 +7,12 @@ The package exposes twelve bounded MCP tools for bootstrap context, Git resume
 snapshots, directory and text search, text and image reads, SHA-guarded UTF-8
 writes, and asynchronous PowerShell jobs with status, output, and cancellation.
 
-## Preview status
+## Release status
 
-This repository is a local distribution candidate. Its source, tests, setup
-flow, and release package are being prepared for clean-machine validation.
-No public redistribution license has been selected yet. Do not publish this
-repository publicly until that decision and the third-party license review are
-complete.
+Version 1.0 is the first public release. Its source, tests, setup flow, and
+release package have completed automated validation on Windows x64. A clean
+machine with a real OpenAI Secure MCP Tunnel is still recommended before wider
+deployment.
 
 ## Requirements
 
@@ -94,3 +93,7 @@ npm.cmd run smoke:stdio -- workstation
 
 See [SECURITY.md](SECURITY.md) before enabling the shell tools, and
 [docs/ADDING_PROFILES.md](docs/ADDING_PROFILES.md) before extending the registry.
+
+## License
+
+Hybrid Workstation MCP is released under the [MIT License](LICENSE).
