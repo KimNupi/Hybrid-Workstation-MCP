@@ -91,6 +91,7 @@ if ($Snapshot) {
   )
   [pscustomobject]@{
     profileId = $Profile.Id
+    permissionPreset = $Profile.PermissionPreset
     running = $null -ne $TunnelProcess
     pid = if ($TunnelProcess) { [int]$TunnelProcess.ProcessId } else { $null }
     processState = $ProcessState
@@ -146,6 +147,7 @@ $Health = Invoke-RestMethod -Uri "$HealthBaseUrl/healthz" -TimeoutSec 5
 $Ready = Invoke-RestMethod -Uri "$HealthBaseUrl/readyz" -TimeoutSec 5
 [pscustomobject]@{
   profileId = $Profile.Id
+  permissionPreset = $Profile.PermissionPreset
   pid = [int]$TunnelProcess.ProcessId
   health = $Health
   ready = $Ready

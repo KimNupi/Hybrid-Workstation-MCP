@@ -158,6 +158,7 @@ describe("trusted identity profile", () => {
     expect(context.primaryRoot).toBe(fixture.primaryRoot);
     expect(context.defaultWorkingDirectory).toBe(fixture.defaultWorkingDirectory);
     expect(context.profile.primaryRoot).toBe(fixture.primaryRoot);
+    expect(context.profile.permissionPreset).toBe("workstation");
     expect(Object.hasOwn(context.profile, "accessRoots")).toBe(false);
     expect(Object.hasOwn(context.profile, "protectedPrefixes")).toBe(false);
     expect(Object.isFrozen(context)).toBe(true);
@@ -167,6 +168,17 @@ describe("trusted identity profile", () => {
     const mutable = context.profile as unknown as { displayName: string; bootstrapFiles: string[] };
     expect(() => { mutable.displayName = "changed"; }).toThrow(TypeError);
     expect(() => { mutable.bootstrapFiles.push("other.md"); }).toThrow(TypeError);
+  });
+
+  it("accepts explicit permission presets and rejects invalid values", async () => {
+    const fixture = await makeFixture();
+    for (const permissionPreset of ["readonly", "coding", "workstation"] as const) {
+      await writeFixtureProfile(fixture, { ...fixture.profile, permissionPreset });
+      const context = await loadProjectProfile("test-project", fixture.options);
+      expect(context.profile.permissionPreset).toBe(permissionPreset);
+    }
+    await writeFixtureProfile(fixture, { ...fixture.profile, permissionPreset: "unrestricted" });
+    await expect(loadProjectProfile("test-project", fixture.options)).rejects.toThrow();
   });
 
   it("derives every managed project root from the trusted registry and rejects overlapping roots", async () => {

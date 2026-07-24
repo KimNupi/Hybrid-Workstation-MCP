@@ -13,6 +13,22 @@ tool is intentionally powerful and is not an operating-system sandbox.
   shell code is loaded.
 - Never upload `runtime/`, a generated tunnel YAML, logs, or support bundles.
 
+## Permission presets
+
+New installations default to `coding`. Use the narrowest preset that completes
+the task:
+
+- `readonly` exposes inspection tools only. It prevents MCP file mutation and
+  command execution, but readable files may still contain private information.
+- `coding` adds SHA-guarded UTF-8 text creation and replacement. It does not
+  expose PowerShell process tools.
+- `workstation` adds arbitrary PowerShell execution as the current Windows user.
+  Enable it only for tasks that genuinely require builds, Git commands, external
+  programs, or other command-line work.
+
+A permission preset is a tool-exposure boundary, not an OS sandbox. Windows ACLs
+and UAC remain the actual machine boundary.
+
 ## Recommended operating practice
 
 - Keep write confirmations enabled in ChatGPT.
@@ -27,5 +43,5 @@ tool is intentionally powerful and is not an operating-system sandbox.
 ## Reporting
 
 Use the repository's **Security** tab to report a vulnerability privately. Do
-not report tunnel runtime keys or private logs in a public issue. Version 1.0 is
+not report tunnel runtime keys or private logs in a public issue. Version 1.1 is
 the currently supported release.
