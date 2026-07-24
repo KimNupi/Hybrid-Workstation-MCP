@@ -1,9 +1,9 @@
-# Hybrid Workstation MCP Starter
+# Hybrid Workstation MCP
 
-A Windows starter that connects one general-purpose local workstation profile
+A Windows package that connects one general-purpose local workstation profile
 to a ChatGPT developer-mode app through OpenAI Secure MCP Tunnel.
 
-The starter exposes twelve bounded MCP tools for bootstrap context, Git resume
+The package exposes twelve bounded MCP tools for bootstrap context, Git resume
 snapshots, directory and text search, text and image reads, SHA-guarded UTF-8
 writes, and asynchronous PowerShell jobs with status, output, and cancellation.
 

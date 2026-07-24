@@ -13,7 +13,7 @@ async function fixture(): Promise<{ context: ProjectContext; primary: string; fo
   const primary = join(root, "primary");
   const foreign = join(root, "foreign");
   const outside = join(root, "outside 한글");
-  const engineRoot = join(root, "hybrid-workstation-mcp-starter");
+  const engineRoot = join(root, "hybrid-workstation-mcp");
   await Promise.all([
     mkdir(primary, { recursive: true }),
     mkdir(foreign, { recursive: true }),

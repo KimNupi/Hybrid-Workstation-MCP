@@ -35,7 +35,7 @@ const context = await loadProjectProfile(profileId);
 const tempRoot = await mkdtemp(join(tmpdir(), `hybrid-workstation-stdio-${profileId}-`));
 const outsidePath = join(tempRoot, ".env.fixture");
 await writeFile(outsidePath, "fixture=true\n", "utf8");
-const client = new Client({ name: `${profileId}-stdio-smoke`, version: "0.1.0" });
+const client = new Client({ name: `${profileId}-stdio-smoke`, version: "1.0.0" });
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [entrypoint, "--profile", profileId],

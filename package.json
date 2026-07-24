@@ -1,9 +1,9 @@
 {
-  "name": "hybrid-workstation-mcp-starter",
-  "version": "0.1.0",
+  "name": "hybrid-workstation-mcp",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "A Windows workstation MCP starter for ChatGPT developer-mode apps over Secure MCP Tunnel.",
+  "description": "A Windows workstation MCP for ChatGPT developer-mode apps over Secure MCP Tunnel.",
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
     "build": "npm run clean && tsc -p tsconfig.json",

@@ -19,7 +19,7 @@ $RegistryPath = Join-Path $ToolRoot "runtime\profile_registry.json"
 $TemplateRoot = Join-Path $ToolRoot "templates\workstation"
 $Utf8 = [Text.UTF8Encoding]::new($false)
 
-if ($env:OS -cne "Windows_NT") { throw "This starter currently supports Windows only." }
+if ($env:OS -cne "Windows_NT") { throw "Hybrid Workstation MCP currently supports Windows only." }
 if ($ProfileId -cnotmatch "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$") { throw "ProfileId is invalid." }
 if ([string]::IsNullOrWhiteSpace($DisplayName) -or $DisplayName.Length -gt 80) { throw "DisplayName is invalid." }
 if ((Test-Path -LiteralPath $ProfilePath) -and -not $Force) { throw "Profile already exists. Re-run with -Force only after reviewing it: $ProfilePath" }

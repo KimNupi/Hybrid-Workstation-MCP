@@ -7,13 +7,15 @@ $ToolRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..") -ErrorActi
 $Package = Get-Content -Raw -LiteralPath (Join-Path $ToolRoot "package.json") | ConvertFrom-Json
 $Version = [string]$Package.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "package.json version is invalid." }
+$VersionParts = $Version.Split('.')
+$ReleaseVersion = if ($VersionParts[2] -eq '0') { "$($VersionParts[0]).$($VersionParts[1])" } else { $Version }
 
 $ReleaseRoot = Join-Path $ToolRoot "release"
-$ArchiveName = "Hybrid-Workstation-MCP-Starter-v$Version.zip"
+$ArchiveName = "Hybrid-Workstation-MCP-v$ReleaseVersion.zip"
 $ArchivePath = Join-Path $ReleaseRoot $ArchiveName
 $HashPath = "$ArchivePath.sha256"
-$StagingParent = Join-Path $env:TEMP ("HybridMcpStarter-Release-" + [guid]::NewGuid().ToString("N"))
-$StagingRoot = Join-Path $StagingParent "Hybrid Workstation MCP Starter"
+$StagingParent = Join-Path $env:TEMP ("HybridMcp-Release-" + [guid]::NewGuid().ToString("N"))
+$StagingRoot = Join-Path $StagingParent "Hybrid-Workstation-MCP"
 $Include = @(
   ".gitattributes", ".gitignore", "AGENTS.md", "Configure Tunnel.cmd", "Hybrid MCP Control.cmd", "Install.cmd",
   "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "package.json", "package-lock.json",

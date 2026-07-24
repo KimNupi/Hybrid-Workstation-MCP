@@ -1,6 +1,6 @@
 # Adding profiles
 
-The Starter installs one `workstation` profile. Advanced users may add another
+Hybrid Workstation MCP installs one `workstation` profile. Advanced users may add another
 profile later, but should preserve these invariants:
 
 1. Store the profile at `<root>\tools\chatgpt-hybrid-mcp\profile.json`.

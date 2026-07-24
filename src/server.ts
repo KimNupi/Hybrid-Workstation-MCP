@@ -106,7 +106,7 @@ const shellStatusOutputSchema = {
 export function createServer(context: ProjectContext): McpServer {
   const projectName = context.profile.displayName;
   const server = new McpServer(
-    { name: context.profile.serverName, version: "0.1.0" },
+    { name: context.profile.serverName, version: "1.0.0" },
     { instructions: serverInstructions(context) },
   );
 

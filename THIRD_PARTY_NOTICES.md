@@ -1,6 +1,6 @@
 # Third-party notices
 
-The Starter does not vendor npm dependency source code in Git. `npm ci` installs
+Hybrid Workstation MCP does not vendor npm dependency source code in Git. `npm ci` installs
 the versions pinned by `package-lock.json`.
 
 | Component | Version | License |

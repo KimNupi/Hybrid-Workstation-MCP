@@ -1,6 +1,6 @@
-# Hybrid Workstation MCP Starter Guidance
+# Hybrid Workstation MCP Guidance
 
-This repository is a distributable Windows starter for one general-purpose
+This repository is a distributable Windows package for one general-purpose
 ChatGPT workstation MCP profile.
 
 - Preserve the default no-startup behavior. A Windows restart must leave the

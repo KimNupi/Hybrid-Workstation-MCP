@@ -79,7 +79,7 @@ async function addFixtureProfile(
 async function makeFixture(): Promise<Fixture> {
   const root = await mkdtemp(join(tmpdir(), "workstation-profile-"));
   temporaryRoots.push(root);
-  const engineRoot = join(root, "hybrid-workstation-mcp-starter");
+  const engineRoot = join(root, "hybrid-workstation-mcp");
   const registryDirectory = join(engineRoot, "runtime");
   const registryPath = join(registryDirectory, "profile_registry.json");
   const primaryRoot = join(root, "project");
