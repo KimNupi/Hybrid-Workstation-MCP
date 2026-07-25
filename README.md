@@ -3,14 +3,20 @@
 A Windows package that connects one general-purpose local workstation profile
 to a ChatGPT developer-mode app through OpenAI Secure MCP Tunnel.
 
-The package exposes a permission-selected set of bounded MCP tools for bootstrap
-context, Git resume snapshots, directory and text search, text and image reads,
-SHA-guarded UTF-8 writes, and optional asynchronous PowerShell jobs with status,
-output, and cancellation.
+The package exposes bounded tools for bootstrap context, Git resume snapshots,
+directory and text search, text and image reads, explicitly granted application
+window observation, SHA-guarded UTF-8 writes, and asynchronous PowerShell jobs
+with status, output, and cancellation.
 
 ## Release status
 
-Version 1.1 adds explicit `readonly` and `workstation` permission presets. Its source, tests, setup flow, and release package have completed
+Version 1.2 adds `ui_window_list` and `ui_window_capture`. A local user grants
+one currently open application window, and ChatGPT can list and capture only
+that exact live process window. Windows Graphics Capture is the primary backend
+for GPU-rendered applications, with target-only `PrintWindow` as a compatibility
+fallback. The package still provides no UI clicking or text input.
+
+The source, tests, setup flow, native helper, and release package have completed
 automated validation on Windows x64. A clean machine with a real OpenAI Secure
 MCP Tunnel is still recommended before wider deployment.
 
@@ -22,6 +28,9 @@ MCP Tunnel is still recommended before wider deployment.
 - ripgrep (`rg.exe`)
 - A ChatGPT account or workspace allowed to use Developer mode
 - An OpenAI Platform tunnel with a `tunnel_id` and runtime API key
+
+The release ZIP includes the self-contained x64 window-capture helper. End users
+do not need to install .NET. Building a release from source requires .NET SDK 10.
 
 Secure MCP Tunnel permissions and ChatGPT Developer mode are separate. Each
 user must use their own Platform organization, tunnel, API key, and ChatGPT
@@ -40,8 +49,7 @@ Official setup references:
    private.
 4. Double-click `Configure Tunnel.cmd`, then enter your own `tunnel_id` and
    runtime API key.
-5. The new profile starts in normal `workstation` mode. Double-click `Hybrid MCP Control.cmd`
-   and choose `Start`. Use the permission menu only when you deliberately want a read-only lock.
+5. Double-click `Hybrid MCP Control.cmd` and choose `Start`.
 6. In ChatGPT, enable **Settings → Security and login → Developer mode**.
 7. Open **Settings → Plugins**, create a developer-mode app, select **Tunnel**,
    and choose the same tunnel.
@@ -53,14 +61,33 @@ It is a small Git repository containing durable instructions and the local
 profile manifest. The profile can access other paths available to the current
 Windows account. Windows ACLs and UAC remain the real machine boundary.
 
+## Window observation
+
+Window observation is off until the local user grants one open window.
+
+1. Open the application or game preview you want ChatGPT to see.
+2. Open `Hybrid MCP Control.cmd`.
+3. Choose **Window access**.
+4. Choose **Grant one currently open window** and select it from the local list.
+5. Ask ChatGPT to list or capture the granted window.
+
+The local grant stores an opaque reference plus the exact window handle,
+process ID, process start time, and executable identity. ChatGPT never receives
+the raw handle, PID, or executable path. The grant becomes unavailable when the
+application closes or restarts, and the local menu can clear it at any time.
+
+`ui_window_capture` captures only the target window. It does not take a desktop
+screenshot and crop it afterward. Minimized windows are rejected; restore the
+window before capture.
+
 ## Permission presets
 
-- `workstation` (default): normal operation with all twelve tools. ChatGPT can
-  inspect, edit, build, test, and run commands as the conversation naturally
-  progresses. A separate mode approval is not required for each task.
-- `readonly`: an optional deliberate lock exposing only six inspection tools.
-  Use it when you specifically want analysis with no local mutation or command
-  execution.
+- `workstation` (default): normal operation with all fourteen tools. ChatGPT can
+  inspect, observe granted windows, edit, build, test, and run commands as the
+  conversation naturally progresses. A separate mode approval is not required
+  for each task.
+- `readonly`: an optional deliberate lock exposing eight inspection and window-
+  observation tools, with no file mutation or command execution.
 
 The preset is a coarse connection-level lock, not a per-action confirmation
 system or an operating-system sandbox. The control menu automatically stops and
@@ -85,6 +112,7 @@ restarts an active tunnel when changing the lock. Most users should leave it on
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Install.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Configure-Tunnel.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Doctor.ps1 -Online
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Manage-Window-Grants.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Set-Permission-Preset.ps1 -PermissionPreset readonly
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action start
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action status
@@ -96,14 +124,16 @@ Local development:
 ```powershell
 npm.cmd ci
 npm.cmd run check
+npm.cmd run build:native
 npm.cmd run smoke:stdio -- workstation
 ```
 
 ## What is intentionally not included
 
 - Personal project profiles or absolute user paths
-- API keys, tunnel YAML, logs, runtime state, or browser data
-- Browser control, desktop UI automation, or specialized application workers
+- API keys, tunnel YAML, grants, logs, runtime state, or browser data
+- Browser control, desktop UI clicking or typing, or specialized application
+  workers
 - A Windows service, scheduled task, or startup item
 - Automatic software installation or privilege elevation
 

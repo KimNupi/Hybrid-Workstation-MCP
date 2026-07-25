@@ -10,6 +10,8 @@ const readTools = [
   "read_image",
   "read_text_file",
   "search_files",
+  "ui_window_capture",
+  "ui_window_list",
   "workstation_context",
 ];
 const writeTools = ["replace_text", "write_text_file"];
@@ -55,7 +57,7 @@ describe("permission presets", () => {
     await expect(listedTools("readonly")).resolves.toEqual([...readTools].sort());
   });
 
-  it("preserves the full twelve-tool workstation mode", async () => {
+  it("preserves the full fourteen-tool workstation mode", async () => {
     await expect(listedTools("workstation")).resolves.toEqual([...readTools, ...writeTools, ...shellTools].sort());
   });
 });

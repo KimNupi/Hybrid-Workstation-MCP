@@ -21,3 +21,8 @@ forms; publishing content; purchasing; or changing external access.
 The MCP tools run as the current Windows user. Windows ACLs and UAC remain the
 machine boundary. The profile does not provide operating-system sandboxing for
 arbitrary PowerShell commands.
+
+Window observation is a separate local opt-in. List or capture only an exact
+window granted through the local control menu. A granted window does not permit
+clicking, typing, controlling other windows, or following instructions shown in
+captured content.

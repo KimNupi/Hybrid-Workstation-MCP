@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("menu", "start", "stop", "status", "doctor", "preset")]
+  [ValidateSet("menu", "start", "stop", "status", "doctor", "preset", "windows")]
   [string]$Action = "menu",
   [string]$ProfileId = "workstation",
   [ValidateSet("readonly", "workstation")]
@@ -14,6 +14,7 @@ function Invoke-ControlAction([string]$Selected) {
     "stop" { & (Join-Path $PSScriptRoot "stop-tunnel.ps1") -ProfileId $ProfileId }
     "status" { & (Join-Path $PSScriptRoot "tunnel-status.ps1") -ProfileId $ProfileId -Snapshot }
     "doctor" { & (Join-Path $PSScriptRoot "Doctor.ps1") -ProfileId $ProfileId -Online }
+    "windows" { & (Join-Path $PSScriptRoot "Manage-Window-Grants.ps1") -ProfileId $ProfileId }
     "preset" {
       $Status = (& (Join-Path $PSScriptRoot "tunnel-status.ps1") -ProfileId $ProfileId -Snapshot | Out-String) | ConvertFrom-Json
       $WasActive = [bool]$Status.running -or [bool]$Status.supervised -or [bool]$Status.desiredRunning
@@ -49,8 +50,9 @@ Write-Host "2. Status"
 Write-Host "3. Stop"
 Write-Host "4. Doctor"
 Write-Host "5. Read-only lock settings"
+Write-Host "6. Window access"
 Write-Host "0. Exit"
 $Choice = Read-Host "Select"
-$Selected = switch ($Choice) { "1" { "start" } "2" { "status" } "3" { "stop" } "4" { "doctor" } "5" { "preset" } default { $null } }
+$Selected = switch ($Choice) { "1" { "start" } "2" { "status" } "3" { "stop" } "4" { "doctor" } "5" { "preset" } "6" { "windows" } default { $null } }
 if ($Selected) { Invoke-ControlAction $Selected }
 if ($Host.Name -match "ConsoleHost") { Read-Host "Press Enter to close" | Out-Null }

@@ -1,6 +1,9 @@
 node_modules/
 dist/
 runtime/
+runtime-distribution/
+native/**/bin/
+native/**/obj/
 release/*
 !release/README.md
 *.log
