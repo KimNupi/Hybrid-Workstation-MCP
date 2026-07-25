@@ -1,6 +1,6 @@
 {
   "name": "hybrid-workstation-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "license": "MIT-0",
   "type": "module",
@@ -13,7 +13,10 @@
     "test:recovery-policy": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/test-recovery-policy.ps1",
     "check": "npm run build && npm test && npm run test:permission-presets && npm run test:recovery-policy",
     "smoke:stdio": "node scripts/stdio-smoke.mjs",
-    "release": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Release.ps1"
+    "smoke:window": "node scripts/window-smoke.mjs",
+    "release": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Release.ps1",
+    "build:native": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Build-Native.ps1",
+    "windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/Manage-Window-Grants.ps1"
   },
   "engines": {
     "node": ">=20"

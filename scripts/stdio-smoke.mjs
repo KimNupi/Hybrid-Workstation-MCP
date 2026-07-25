@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-const readTools = ["list_directory", "project_resume", "read_image", "read_text_file", "search_files", "workstation_context"];
+const readTools = ["list_directory", "project_resume", "read_image", "read_text_file", "search_files", "ui_window_capture", "ui_window_list", "workstation_context"];
 const writeTools = ["replace_text", "write_text_file"];
 const shellTools = ["shell_cancel", "shell_output", "shell_start", "shell_status"];
 

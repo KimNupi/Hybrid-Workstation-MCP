@@ -11,8 +11,15 @@ Hybrid Workstation MCP does not vendor npm dependency source code in Git.
 | `vitest` | 4.1.10 | MIT |
 | `@types/node` | 24.13.3 | MIT |
 | OpenAI `tunnel-client` | 0.0.10 | Apache-2.0 |
+| .NET runtime components linked into `HybridWindowCapture.exe` | 10.0.x | MIT |
+| Microsoft Windows SDK for .NET targeting pack | 10.0.19041.57 | Microsoft Windows SDK license |
 
 The installer downloads the pinned official Windows x64 `tunnel-client`
 release from `openai/tunnel-client` and verifies both its release archive and
-executable SHA-256 before installation. Review the upstream license texts and
-dependency graph whenever dependencies are updated.
+executable SHA-256 before installation.
+
+The release builder compiles the window-capture source with .NET NativeAOT into
+a self-contained x64 executable and ships a separate SHA-256 file. The Windows
+SDK targeting pack is used at build time; Windows system capture and Direct3D
+APIs are provided by the user's operating system. Review the upstream license
+texts and dependency graph whenever dependencies or SDK versions are updated.
