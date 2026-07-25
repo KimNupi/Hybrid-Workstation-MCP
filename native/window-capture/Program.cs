@@ -7,7 +7,7 @@ using Windows.Graphics.DirectX.Direct3D11;
 using Windows.Graphics.Imaging;
 using WinRT;
 
-const string Version = "1.2.0";
+const string Version = "1.3.0";
 try
 {
     if (args.Length == 1 && args[0] == "--self-test")

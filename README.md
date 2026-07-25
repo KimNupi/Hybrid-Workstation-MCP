@@ -10,11 +10,13 @@ with status, output, and cancellation.
 
 ## Release status
 
-Version 1.2 adds `ui_window_list` and `ui_window_capture`. A local user grants
-one currently open application window, and ChatGPT can list and capture only
-that exact live process window. Windows Graphics Capture is the primary backend
-for GPU-rendered applications, with target-only `PrintWindow` as a compatibility
-fallback. The package still provides no UI clicking or text input.
+Version 1.3 adds optional trusted-app observation rules. A local user may keep
+a one-time exact process grant or register an exact executable path plus a stable
+window-title substring. After an application restart, ChatGPT auto-rebinds only
+when exactly one live window matches and no rule from another profile claims the
+same window. Ambiguous or colliding matches fail closed. Windows Graphics Capture
+remains the primary GPU-aware backend with target-only `PrintWindow` fallback,
+and the package still provides no UI clicking or text input.
 
 The source, tests, setup flow, native helper, and release package have completed
 automated validation on Windows x64. A clean machine with a real OpenAI Secure
@@ -68,13 +70,19 @@ Window observation is off until the local user grants one open window.
 1. Open the application or game preview you want ChatGPT to see.
 2. Open `Hybrid MCP Control.cmd`.
 3. Choose **Window access**.
-4. Choose **Grant one currently open window** and select it from the local list.
-5. Ask ChatGPT to list or capture the granted window.
+4. Choose **Grant one currently open window** for temporary access, or **Trust
+   app and auto-rebind** for repeated development runs.
+5. For a trusted rule, keep the suggested stable project/file title text or
+   enter a narrower title substring.
+6. Ask ChatGPT to list or capture the granted window.
 
-The local grant stores an opaque reference plus the exact window handle,
-process ID, process start time, and executable identity. ChatGPT never receives
-the raw handle, PID, or executable path. The grant becomes unavailable when the
-application closes or restarts, and the local menu can clear it at any time.
+A one-time grant pins the exact window handle, process ID, process start time,
+and executable identity. A trusted rule stores only the exact executable path
+and bounded title substring, then creates a fresh opaque window reference after
+a restart when exactly one safe match exists. ChatGPT never receives the raw
+handle, PID, process start time, or executable path. Multiple matches and
+cross-profile collisions remain unavailable, and the local menu can clear both
+entry types at any time.
 
 `ui_window_capture` captures only the target window. It does not take a desktop
 screenshot and crop it afterward. Minimized windows are rejected; restore the
