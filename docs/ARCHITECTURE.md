@@ -31,13 +31,15 @@ inspection tools in `readonly` or all fourteen tools in `workstation`.
 local control menu
   -> enumerate eligible top-level windows locally
   -> user selects one exact window
-  -> runtime/ui_grants.json stores private identity
+  -> store one-time private identity or exact executable + title text
+  -> runtime/ui_grants.json is atomically written with a restricted ACL
 
 ChatGPT ui_window_list
-  -> read only that profile's grants
+  -> read only that profile's grants and trusted rules
   -> re-enumerate current windows locally
-  -> exact HWND + PID + start time + executable match
-  -> return opaque windowRef and public metadata
+  -> one-time: exact HWND + PID + start time + executable match
+  -> trusted: exact executable + title text, exactly one match, no profile collision
+  -> create/return an opaque windowRef and public metadata
 
 ChatGPT ui_window_capture(windowRef)
   -> revalidate identity

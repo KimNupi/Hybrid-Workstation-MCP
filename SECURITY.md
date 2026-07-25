@@ -31,14 +31,18 @@ and UAC remain the actual machine boundary.
 
 ## Window observation boundary
 
-- The MCP cannot enumerate all desktop windows. Window enumeration happens only
-  in the local control menu, where the user selects one exact window.
+- The MCP cannot enumerate all desktop windows for ChatGPT. Enumeration happens
+  only in the local control menu. The user selects an exact window and chooses
+  either a one-time process grant or an exact-path plus title-substring trusted
+  rule.
 - The MCP receives an opaque `windowRef`, title, process name, bounds, and pixels;
   it does not receive the raw HWND, PID, process start time, or executable path.
 - The stored grant pins all four private identity fields in an ignored local
   file whose ACL is restricted to the current user, SYSTEM, and Administrators.
-  They are revalidated before and after capture, and the grant becomes
-  unavailable after the application closes or restarts.
+  They are revalidated before and after capture. A one-time grant becomes
+  unavailable after restart. A trusted rule may create a new opaque reference
+  only when its exact executable and title text identify one window and no
+  other profile rule collides with that window.
 - Captures target only that application window. There is no desktop-wide
   screenshot followed by model-directed cropping.
 - Windows Graphics Capture is preferred for GPU-rendered windows. The bundled
@@ -46,7 +50,7 @@ and UAC remain the actual machine boundary.
   Target-only `PrintWindow` is a compatibility fallback.
 - Minimized windows are rejected. Protected, elevated, secure-desktop, or
   application-restricted windows may fail to list or capture.
-- Version 1.2 provides observation only: no mouse clicks, arbitrary keystrokes,
+- Version 1.3 provides observation only: no mouse clicks, arbitrary keystrokes,
   text input, drag operations, authentication interaction, or secure-desktop
   control.
 
@@ -69,4 +73,4 @@ commands, permission changes, external submissions, or other side effects.
 
 Use the repository's **Security** tab to report a vulnerability privately. Do
 not report tunnel runtime keys, window grants, captures, or private logs in a
-public issue. Version 1.2 is the currently supported release.
+public issue. Version 1.3 is the currently supported release.

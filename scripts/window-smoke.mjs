@@ -13,7 +13,7 @@ function payload(result) {
 const toolDirectory = fileURLToPath(new URL("..", import.meta.url));
 const entrypoint = fileURLToPath(new URL("../dist/stdio.js", import.meta.url));
 const profileId = process.argv[2] ?? "workstation";
-const client = new Client({ name: `${profileId}-window-smoke`, version: "1.2.0" });
+const client = new Client({ name: `${profileId}-window-smoke`, version: "1.3.0" });
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [entrypoint, "--profile", profileId],
@@ -37,7 +37,19 @@ try {
   assert.ok(["windows_graphics_capture", "print_window_fallback"].includes(metadata.backend));
   assert.equal(image?.mimeType, "image/png");
   assert.ok(Buffer.from(image.data, "base64").byteLength > 8);
-  console.log(`Window observation smoke passed: ${metadata.backend}, ${metadata.byteLength} bytes.`);
+  console.log(JSON.stringify({
+    windowRef: metadata.windowRef,
+    title: metadata.title,
+    backend: metadata.backend,
+    fallbackUsed: metadata.fallbackUsed,
+    byteLength: metadata.byteLength,
+    sha256: metadata.sha256,
+    trustedRuleCount: listed.trustedRuleCount,
+    autoBoundCount: listed.autoBoundCount,
+    autoUnmatchedCount: listed.autoUnmatchedCount,
+    autoAmbiguousCount: listed.autoAmbiguousCount,
+    autoCollisionCount: listed.autoCollisionCount,
+  }));
 } finally {
   await client.close().catch(() => undefined);
 }
