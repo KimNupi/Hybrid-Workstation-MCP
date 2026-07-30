@@ -96,6 +96,8 @@ try {
       "Hybrid-Workstation-MCP/src/build-info.generated.ts",
       "Hybrid-Workstation-MCP/scripts/ControlCenter.ps1",
       "Hybrid-Workstation-MCP/scripts/test-control-center.ps1",
+      "Hybrid-Workstation-MCP/scripts/tunnel-manager.ps1",
+      "Hybrid-Workstation-MCP/scripts/test-tunnel-manager.ps1",
       "Hybrid-Workstation-MCP/runtime-distribution/window-capture/win-x64/HybridWindowCapture.exe",
       "Hybrid-Workstation-MCP/runtime-distribution/window-capture/win-x64/HybridWindowCapture.exe.sha256",
       "Hybrid-Workstation-MCP/native/window-capture/Program.cs"

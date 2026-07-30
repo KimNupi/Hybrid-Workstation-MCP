@@ -20,8 +20,10 @@ if ([string]::IsNullOrWhiteSpace($PermissionPreset)) {
   }
 }
 
-$Lock = Enter-HybridTunnelOperationLock -ProfileId $ProfileId
+$RegistryLock = Enter-HybridProfileRegistryLock
+$Lock = $null
 try {
+  $Lock = Enter-HybridTunnelOperationLock -ProfileId $ProfileId
   $Profile = Get-HybridProfile -ProfileId $ProfileId
   $RuntimePaths = Get-HybridTunnelRuntimePaths -Profile $Profile
   $Tunnel = if (Test-Path -LiteralPath $RuntimePaths.TunnelPidPath -PathType Leaf) {
@@ -97,5 +99,6 @@ try {
   Write-Output "Permission preset changed: $CurrentPreset -> $PermissionPreset"
   Write-Output "The new tool set takes effect when the tunnel starts."
 } finally {
-  Exit-HybridTunnelOperationLock -Lock $Lock
+  if ($null -ne $Lock) { Exit-HybridTunnelOperationLock -Lock $Lock }
+  Exit-HybridProfileRegistryLock -Lock $RegistryLock
 }

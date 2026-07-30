@@ -36,7 +36,8 @@ if (
   [int]$Validation.height -lt 600 -or
   [int]$Validation.height -gt 650 -or
   [int]$Validation.requiredControlCount -lt 20 -or
-  [int]$Validation.requiredControlCount -ne [int]$Validation.resolvedControlCount
+  [int]$Validation.requiredControlCount -ne [int]$Validation.resolvedControlCount -or
+  -not [bool]$Validation.multiProfileControlsAvailable
 ) {
   throw "Control Center XAML validation contract is invalid."
 }
@@ -53,6 +54,7 @@ foreach ($RequiredScript in @(
   "start-tunnel.ps1",
   "stop-tunnel.ps1",
   "Control.ps1",
+  "tunnel-manager.ps1",
   "Doctor.ps1",
   "Configure-Tunnel.ps1"
 )) {
@@ -87,7 +89,9 @@ if (
 $ReleaseText = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot "Build-Release.ps1") -Encoding utf8
 foreach ($RequiredReleaseEntry in @(
   "Hybrid-Workstation-MCP/scripts/ControlCenter.ps1",
-  "Hybrid-Workstation-MCP/scripts/test-control-center.ps1"
+  "Hybrid-Workstation-MCP/scripts/test-control-center.ps1",
+  "Hybrid-Workstation-MCP/scripts/tunnel-manager.ps1",
+  "Hybrid-Workstation-MCP/scripts/test-tunnel-manager.ps1"
 )) {
   if ($ReleaseText.IndexOf($RequiredReleaseEntry, [StringComparison]::Ordinal) -lt 0) {
     throw "The release contract is missing Control Center entry: $RequiredReleaseEntry"
@@ -102,7 +106,12 @@ if (
   throw "package.json does not include the Control Center validation gate."
 }
 if ($Text -cnotmatch 'HybridWorkstationMcp-ControlCenter') {
-  throw "Control Center does not enforce a per-profile single-instance lock."
+  throw "Control Center does not enforce a single manager instance lock."
+}
+foreach ($RequiredMultiProfileContract in @("ProfileSelector", "AllProfilesButton", "status-all", "start-all", "stop-all")) {
+  if ($Text.IndexOf($RequiredMultiProfileContract, [StringComparison]::Ordinal) -lt 0) {
+    throw "Control Center is missing multi-profile contract: $RequiredMultiProfileContract"
+  }
 }
 
 Write-Output "CONTROL_CENTER_TEST_OK"

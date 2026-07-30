@@ -1,7 +1,9 @@
 # Hybrid Workstation MCP
 
-A Windows package that connects one general-purpose local workstation profile
-to a ChatGPT developer-mode app through OpenAI Secure MCP Tunnel.
+A Windows package that connects a general-purpose local workstation profile to
+a ChatGPT developer-mode app through OpenAI Secure MCP Tunnel. One profile is
+installed by default; advanced users can register and manage additional,
+non-overlapping profiles.
 
 The package exposes bounded tools for bootstrap context, Git resume snapshots,
 directory and text search, text and image reads, explicitly granted application
@@ -19,11 +21,14 @@ lint and coverage gates, bounded directory concurrency, single-pass text
 pagination, and installation-independent stdio, performance, and native-shell
 smokes.
 
-The public server remains a fourteen-tool, single-profile stdio MCP. It does not
-add an HTTP MCP listener. Trusted-app window observation from version 1.3 remains
-available: ambiguous or cross-profile matches fail closed, Windows Graphics
-Capture remains the primary backend with target-only `PrintWindow` fallback,
-and there is still no UI clicking or text input.
+Each public server process remains a fourteen-tool, single-profile stdio MCP. It
+does not add an HTTP MCP listener. The local manager can inspect registered
+profiles concurrently and start, stop, or restart up to three profiles at a
+time; already active or recovering profiles are skipped by **Connect all**.
+Trusted-app window observation from version 1.3 remains available: ambiguous or
+cross-profile matches fail closed, Windows Graphics Capture remains the primary
+backend with target-only `PrintWindow` fallback, and there is still no UI
+clicking or text input.
 
 The source, tests, setup flow, native helper, and release package have completed
 automated validation on Windows x64. A clean machine with a real OpenAI Secure
@@ -80,6 +85,12 @@ Windows Control Center. The main screen shows only the connection state, one
 Connect or Disconnect button, and the current access mode. Tunnel setup,
 connection checks, window access, logs, and the classic text menu remain under
 **Setup & troubleshooting**.
+
+With one registered profile, the screen remains unchanged. With two or more,
+the Control Center reveals a profile selector plus **Connect all**, **Connect
+remaining**, or **Disconnect all** as appropriate. Multi-profile status checks
+use at most four workers, lifecycle actions use at most three, and one profile's
+failure is reported without hiding the results from the others.
 
 The Control Center uses the same fail-closed start, stop, status, recovery, and
 permission scripts as the command line. It does not store or display the tunnel
@@ -141,6 +152,9 @@ restarts an active tunnel when changing the lock. Most users should leave it on
 - `project_resume` accepts an optional path and runs fixed read-only Git
   commands there. It permits unrelated worktrees but still rejects another
   registered profile and protected direct-file locations.
+- Multi-profile lifecycle actions retain each profile's existing operation
+  lock. Registry updates are serialized, preserve existing entries, reject
+  duplicate ports and overlapping roots, and are committed with rollback.
 
 ## Commands
 
@@ -154,6 +168,21 @@ powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts\ControlCent
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action start
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action status
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action stop
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action status-all
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action start-all
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action stop-all
+```
+
+Advanced users can add another profile without replacing existing registry
+entries. Use a distinct root, ID, metadata port, and tunnel:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Install.ps1 `
+  -WorkspaceRoot "$env:USERPROFILE\Hybrid Workstation Art" `
+  -ProfileId art-workstation -DisplayName "Art Workstation" -HttpPort 2099 `
+  -SkipTunnelDownload -NoDesktopShortcut
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Configure-Tunnel.ps1 `
+  -ProfileId art-workstation
 ```
 
 Local development:

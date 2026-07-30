@@ -5,6 +5,8 @@ param(
   [string]$DisplayName = "Hybrid Workstation",
   [ValidateSet("readonly", "workstation")]
   [string]$PermissionPreset = "workstation",
+  [ValidateRange(1024, 65535)]
+  [int]$HttpPort = 2098,
   [switch]$Force,
   [switch]$SkipTunnelDownload,
   [switch]$NoDesktopShortcut
@@ -20,11 +22,46 @@ $ProfilePath = Join-Path $ProfileDirectory "profile.json"
 $RegistryPath = Join-Path $ToolRoot "runtime\profile_registry.json"
 $TemplateRoot = Join-Path $ToolRoot "templates\workstation"
 $Utf8 = [Text.UTF8Encoding]::new($false)
+. (Join-Path $PSScriptRoot "profile-registry.ps1")
 
 if ($env:OS -cne "Windows_NT") { throw "Hybrid Workstation MCP currently supports Windows only." }
 if ($ProfileId -cnotmatch "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$") { throw "ProfileId is invalid." }
 if ([string]::IsNullOrWhiteSpace($DisplayName) -or $DisplayName.Length -gt 80) { throw "DisplayName is invalid." }
 if ((Test-Path -LiteralPath $ProfilePath) -and -not $Force) { throw "Profile already exists. Re-run with -Force only after reviewing it: $ProfilePath" }
+
+$PreflightProfiles = @()
+if (Test-Path -LiteralPath $RegistryPath -PathType Leaf) {
+  $ExistingRegistry = Get-HybridRegistry
+  $PreflightProfiles = @($ExistingRegistry.Profiles)
+}
+
+$Profile = [ordered]@{
+  id = $ProfileId
+  displayName = $DisplayName
+  appName = $DisplayName
+  serverName = "$ProfileId-chatgpt-workstation"
+  permissionPreset = $PermissionPreset
+  defaultWorkingDirectoryRelative = "."
+  httpPort = $HttpPort
+  bootstrapFiles = @("AGENTS.md", "README.md", "WORKSTATION_POLICY.md")
+  identityMarkers = @([ordered]@{ relativePath = "workstation.marker"; expectedLiteral = "identity=hybrid-workstation" })
+}
+$ProfileJson = $Profile | ConvertTo-Json -Depth 6
+$ProfileBytes = $Utf8.GetBytes($ProfileJson + [Environment]::NewLine)
+$Hasher = [Security.Cryptography.SHA256]::Create()
+try {
+  $ProfileHash = -join @($Hasher.ComputeHash($ProfileBytes) | ForEach-Object { $_.ToString("x2") })
+} finally {
+  $Hasher.Dispose()
+}
+$null = @(Merge-HybridProfileRegistryEntry `
+  -ExistingProfiles $PreflightProfiles `
+  -ProfileId $ProfileId `
+  -ProfilePath $ProfilePath `
+  -ProfileSha256 $ProfileHash `
+  -RepoRoot $WorkspaceRoot `
+  -HttpPort $HttpPort `
+  -AllowReplace:$Force)
 
 foreach ($command in @("node.exe", "npm.cmd", "git.exe", "rg.exe")) {
   if (-not (Get-Command $command -CommandType Application -ErrorAction SilentlyContinue)) {
@@ -55,26 +92,99 @@ if (-not (Test-Path -LiteralPath (Join-Path $WorkspaceRoot ".git") -PathType Con
   if ($LASTEXITCODE -ne 0) { throw "Could not initialize the profile repository." }
 }
 
-$Profile = [ordered]@{
-  id = $ProfileId
-  displayName = $DisplayName
-  appName = $DisplayName
-  serverName = "$ProfileId-chatgpt-workstation"
-  permissionPreset = $PermissionPreset
-  defaultWorkingDirectoryRelative = "."
-  httpPort = 2098
-  bootstrapFiles = @("AGENTS.md", "README.md", "WORKSTATION_POLICY.md")
-  identityMarkers = @([ordered]@{ relativePath = "workstation.marker"; expectedLiteral = "identity=hybrid-workstation" })
-}
-$ProfileJson = $Profile | ConvertTo-Json -Depth 6
-[IO.File]::WriteAllText($ProfilePath, $ProfileJson + [Environment]::NewLine, $Utf8)
-$ProfileHash = (Get-FileHash -LiteralPath $ProfilePath -Algorithm SHA256).Hash
-$Registry = [ordered]@{
-  version = 1
-  profiles = @([ordered]@{ id = $ProfileId; profilePath = $ProfilePath; profileSha256 = $ProfileHash })
-}
 New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($RegistryPath)) -Force | Out-Null
-[IO.File]::WriteAllText($RegistryPath, ($Registry | ConvertTo-Json -Depth 6) + [Environment]::NewLine, $Utf8)
+$RegistryLock = Enter-HybridProfileRegistryLock
+$ProfileLock = $null
+$RegistryEntries = @()
+try {
+  $ProfileLock = Enter-HybridTunnelOperationLock -ProfileId $ProfileId
+  if ((Test-Path -LiteralPath $ProfilePath -PathType Leaf) -and -not $Force) {
+    throw "Profile was created by another installer. Re-run with -Force only after reviewing it: $ProfilePath"
+  }
+
+  $CurrentProfiles = @()
+  if (Test-Path -LiteralPath $RegistryPath -PathType Leaf) {
+    $CurrentProfiles = @((Get-HybridRegistry).Profiles)
+  }
+  $RegistryEntries = @(Merge-HybridProfileRegistryEntry `
+    -ExistingProfiles $CurrentProfiles `
+    -ProfileId $ProfileId `
+    -ProfilePath $ProfilePath `
+    -ProfileSha256 $ProfileHash `
+    -RepoRoot $WorkspaceRoot `
+    -HttpPort $HttpPort `
+    -AllowReplace:$Force)
+  $Registry = [ordered]@{ version = 1; profiles = $RegistryEntries }
+
+  $Nonce = "$PID.$([guid]::NewGuid().ToString('N'))"
+  $ProfileTempPath = Join-Path $ProfileDirectory "profile.$Nonce.tmp"
+  $ProfileBackupPath = Join-Path $ProfileDirectory "profile.$Nonce.bak"
+  $RegistryTempPath = Join-Path ([IO.Path]::GetDirectoryName($RegistryPath)) "profile_registry.$Nonce.tmp"
+  $RegistryBackupPath = Join-Path ([IO.Path]::GetDirectoryName($RegistryPath)) "profile_registry.$Nonce.bak"
+  $ProfileExisted = Test-Path -LiteralPath $ProfilePath -PathType Leaf
+  $RegistryExisted = Test-Path -LiteralPath $RegistryPath -PathType Leaf
+  $ProfileCommitted = $false
+  try {
+    [IO.File]::WriteAllBytes($ProfileTempPath, $ProfileBytes)
+    $ObservedProfileHash = (Get-FileHash -LiteralPath $ProfileTempPath -Algorithm SHA256).Hash
+    if (-not $ObservedProfileHash.Equals($ProfileHash, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Profile bytes changed while being staged."
+    }
+    [IO.File]::WriteAllText($RegistryTempPath, ($Registry | ConvertTo-Json -Depth 6) + [Environment]::NewLine, $Utf8)
+
+    if ($ProfileExisted) {
+      [IO.File]::Replace($ProfileTempPath, $ProfilePath, $ProfileBackupPath)
+    } else {
+      Move-Item -LiteralPath $ProfileTempPath -Destination $ProfilePath
+    }
+    $ProfileCommitted = $true
+    try {
+      if ($RegistryExisted) {
+        [IO.File]::Replace($RegistryTempPath, $RegistryPath, $RegistryBackupPath)
+      } else {
+        Move-Item -LiteralPath $RegistryTempPath -Destination $RegistryPath
+      }
+    } catch {
+      if ($ProfileExisted -and (Test-Path -LiteralPath $ProfileBackupPath -PathType Leaf)) {
+        Copy-Item -LiteralPath $ProfileBackupPath -Destination $ProfilePath -Force
+      } elseif (-not $ProfileExisted) {
+        Remove-Item -LiteralPath $ProfilePath -Force -ErrorAction SilentlyContinue
+      }
+      throw
+    }
+
+    $VerifiedRegistry = Get-HybridRegistry
+    $VerifiedProfile = @($VerifiedRegistry.Profiles | Where-Object { $_.Id -ceq $ProfileId })
+    if (
+      $VerifiedProfile.Count -ne 1 -or
+      -not ([string]$VerifiedProfile[0].ProfileSha256).Equals($ProfileHash, [StringComparison]::OrdinalIgnoreCase) -or
+      [int]$VerifiedProfile[0].HttpPort -ne $HttpPort
+    ) {
+      throw "The installed profile registry update could not be verified."
+    }
+  } catch {
+    if ($ProfileCommitted) {
+      if ($RegistryExisted -and (Test-Path -LiteralPath $RegistryBackupPath -PathType Leaf)) {
+        Copy-Item -LiteralPath $RegistryBackupPath -Destination $RegistryPath -Force
+      } elseif (-not $RegistryExisted) {
+        Remove-Item -LiteralPath $RegistryPath -Force -ErrorAction SilentlyContinue
+      }
+      if ($ProfileExisted -and (Test-Path -LiteralPath $ProfileBackupPath -PathType Leaf)) {
+        Copy-Item -LiteralPath $ProfileBackupPath -Destination $ProfilePath -Force
+      } elseif (-not $ProfileExisted) {
+        Remove-Item -LiteralPath $ProfilePath -Force -ErrorAction SilentlyContinue
+      }
+    }
+    throw
+  } finally {
+    foreach ($TemporaryPath in @($ProfileTempPath, $ProfileBackupPath, $RegistryTempPath, $RegistryBackupPath)) {
+      Remove-Item -LiteralPath $TemporaryPath -Force -ErrorAction SilentlyContinue
+    }
+  }
+} finally {
+  if ($null -ne $ProfileLock) { Exit-HybridTunnelOperationLock -Lock $ProfileLock }
+  Exit-HybridProfileRegistryLock -Lock $RegistryLock
+}
 
 if (-not $SkipTunnelDownload) {
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
@@ -118,5 +228,7 @@ if (-not $NoDesktopShortcut) {
 
 Write-Output "Hybrid Workstation MCP core installed."
 Write-Output "Profile root: $WorkspaceRoot"
+Write-Output "Registered profiles: $($RegistryEntries.Count)"
+Write-Output "Profile HTTP metadata port: $HttpPort"
 Write-Output "Permission preset: $PermissionPreset"
 Write-Output "Next: run 'Configure Tunnel.cmd', then open 'Hybrid MCP Control.cmd'."

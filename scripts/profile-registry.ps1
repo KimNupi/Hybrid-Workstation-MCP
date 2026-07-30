@@ -91,6 +91,107 @@ function Assert-HybridPathHasNoReparsePoint {
   return $FullPath
 }
 
+function Test-HybridPathWithinOrEqual {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Root,
+
+    [Parameter(Mandatory = $true)]
+    [string]$Candidate
+  )
+
+  $RootPath = [IO.Path]::GetFullPath($Root)
+  $CandidatePath = [IO.Path]::GetFullPath($Candidate)
+  if ($CandidatePath.Equals($RootPath, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+  if (
+    -not $RootPath.EndsWith([string][IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal) -and
+    -not $RootPath.EndsWith([string][IO.Path]::AltDirectorySeparatorChar, [StringComparison]::Ordinal)
+  ) {
+    $RootPath += [IO.Path]::DirectorySeparatorChar
+  }
+  return $CandidatePath.StartsWith($RootPath, [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Merge-HybridProfileRegistryEntry {
+  param(
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [object[]]$ExistingProfiles,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ProfileId,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ProfilePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$ProfileSha256,
+
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateRange(1024, 65535)]
+    [int]$HttpPort,
+
+    [switch]$AllowReplace
+  )
+
+  if ($ProfileId -cnotmatch "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$" -or $ProfileId.Length -gt 32) {
+    throw "Hybrid profile id is invalid."
+  }
+  if (-not [IO.Path]::IsPathRooted($ProfilePath)) { throw "Hybrid profile path must be absolute." }
+  if ($ProfileSha256 -cnotmatch "^[A-Fa-f0-9]{64}$") { throw "Hybrid profile hash is invalid." }
+
+  $NewProfilePath = [IO.Path]::GetFullPath($ProfilePath)
+  $NewRepoRoot = [IO.Path]::GetFullPath($RepoRoot)
+  $Merged = @()
+  $Replaced = $false
+  foreach ($Existing in @($ExistingProfiles)) {
+    $ExistingId = [string]$Existing.Id
+    if ($ExistingId -ceq $ProfileId) {
+      if (-not $AllowReplace) { throw "Hybrid profile $ProfileId is already registered; use Force only after reviewing the replacement." }
+      if ($Replaced) { throw "Hybrid profile $ProfileId is registered more than once." }
+      $Merged += [pscustomobject]@{
+        id = $ProfileId
+        profilePath = $NewProfilePath
+        profileSha256 = $ProfileSha256
+      }
+      $Replaced = $true
+      continue
+    }
+
+    $ExistingProfilePath = [IO.Path]::GetFullPath([string]$Existing.ProfilePath)
+    if ($ExistingProfilePath.Equals($NewProfilePath, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Hybrid profile path is already registered by $ExistingId."
+    }
+    if ([int]$Existing.HttpPort -eq $HttpPort) {
+      throw "Hybrid profile $ProfileId reuses registered httpPort $HttpPort from $ExistingId."
+    }
+    $ExistingRepoRoot = [IO.Path]::GetFullPath([string]$Existing.RepoRoot)
+    if (
+      (Test-HybridPathWithinOrEqual -Root $ExistingRepoRoot -Candidate $NewRepoRoot) -or
+      (Test-HybridPathWithinOrEqual -Root $NewRepoRoot -Candidate $ExistingRepoRoot)
+    ) {
+      throw "Hybrid profile roots must not overlap: $ExistingId, $ProfileId."
+    }
+    $Merged += [pscustomobject]@{
+      id = $ExistingId
+      profilePath = $ExistingProfilePath
+      profileSha256 = [string]$Existing.ProfileSha256
+    }
+  }
+
+  if (-not $Replaced) {
+    $Merged += [pscustomobject]@{
+      id = $ProfileId
+      profilePath = $NewProfilePath
+      profileSha256 = $ProfileSha256
+    }
+  }
+  return @($Merged)
+}
+
 function Assert-HybridRestrictedCredentialAcl {
   param(
     [Parameter(Mandatory = $true)]
@@ -401,6 +502,19 @@ function Get-HybridRegistry {
     }
   )
 
+  for ($LeftIndex = 0; $LeftIndex -lt $Profiles.Count; $LeftIndex += 1) {
+    for ($RightIndex = $LeftIndex + 1; $RightIndex -lt $Profiles.Count; $RightIndex += 1) {
+      $Left = $Profiles[$LeftIndex]
+      $Right = $Profiles[$RightIndex]
+      if (
+        (Test-HybridPathWithinOrEqual -Root $Left.RepoRoot -Candidate $Right.RepoRoot) -or
+        (Test-HybridPathWithinOrEqual -Root $Right.RepoRoot -Candidate $Left.RepoRoot)
+      ) {
+        throw "Hybrid profile roots must not overlap: $($Left.Id), $($Right.Id)."
+      }
+    }
+  }
+
   return [pscustomobject]@{
     RegistryPath = $RegistryJson.Path
     ToolRoot = $ToolRoot
@@ -497,6 +611,40 @@ function Get-HybridTunnelSupervisorScriptPath {
 function Get-HybridPowerShellExecutablePath {
   $Path = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
   return (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+}
+
+function Enter-HybridProfileRegistryLock {
+  param(
+    [int]$TimeoutSeconds = 30
+  )
+
+  if ($TimeoutSeconds -lt 1 -or $TimeoutSeconds -gt 300) {
+    throw "Profile registry lock timeout is outside its bounded range."
+  }
+  $Mutex = [Threading.Mutex]::new($false, "Local\HybridWorkstationMcp-ProfileRegistry")
+  $Acquired = $false
+  try {
+    try {
+      $Acquired = $Mutex.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds))
+    } catch [Threading.AbandonedMutexException] {
+      $Acquired = $true
+    }
+    if (-not $Acquired) { throw "Timed out waiting for the hybrid profile registry lock." }
+    return [pscustomobject]@{ Mutex = $Mutex; Acquired = $true }
+  } catch {
+    $Mutex.Dispose()
+    throw
+  }
+}
+
+function Exit-HybridProfileRegistryLock {
+  param(
+    [Parameter(Mandatory = $true)]
+    [object]$Lock
+  )
+
+  if ($Lock.Acquired) { $Lock.Mutex.ReleaseMutex() }
+  $Lock.Mutex.Dispose()
 }
 
 function Enter-HybridTunnelOperationLock {

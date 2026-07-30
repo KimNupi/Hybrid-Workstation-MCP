@@ -27,7 +27,7 @@ if (-not $ValidateOnly -and -not $Preview) {
   $CreatedNew = $false
   $InstanceMutex = [Threading.Mutex]::new(
     $true,
-    "Local\HybridWorkstationMcp-ControlCenter-$ProfileId",
+    "Local\HybridWorkstationMcp-ControlCenter",
     [ref]$CreatedNew
   )
   if (-not $CreatedNew) {
@@ -49,6 +49,7 @@ $StatusScript = Join-Path $PSScriptRoot "tunnel-status.ps1"
 $StartScript = Join-Path $PSScriptRoot "start-tunnel.ps1"
 $StopScript = Join-Path $PSScriptRoot "stop-tunnel.ps1"
 $ControlScript = Join-Path $PSScriptRoot "Control.ps1"
+$ManagerScript = Join-Path $PSScriptRoot "tunnel-manager.ps1"
 $DoctorScript = Join-Path $PSScriptRoot "Doctor.ps1"
 $ConfigureScript = Join-Path $PSScriptRoot "Configure-Tunnel.ps1"
 
@@ -58,6 +59,7 @@ foreach ($RequiredPath in @(
   $StartScript,
   $StopScript,
   $ControlScript,
+  $ManagerScript,
   $DoctorScript,
   $ConfigureScript
 )) {
@@ -74,6 +76,13 @@ function Test-ControlCenterReadyValue([object]$Value) {
   $ReadyProperty = $Value.PSObject.Properties["ready"]
   if ($null -ne $ReadyProperty) { return [bool]$ReadyProperty.Value }
   return $false
+}
+
+function Test-ControlCenterManagedStatusActive([object]$Status) {
+  if ($null -eq $Status) { return $false }
+  if ([bool]$Status.running -or [bool]$Status.supervised) { return $true }
+  if (-not [bool]$Status.desiredRunning -or [bool]$Status.stopRequested) { return $false }
+  return [string]$Status.recoveryState -in @("starting", "backoff", "recovering", "restarting", "ready")
 }
 
 function Get-ControlCenterPresentation {
@@ -332,6 +341,26 @@ $Xaml = @'
 
       <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="24,8,24,10">
         <StackPanel>
+          <Border x:Name="ProfilePanel" Visibility="Collapsed" Background="#101727" BorderBrush="{StaticResource CardBorder}"
+                  BorderThickness="1" CornerRadius="14" Padding="14,11" Margin="0,0,0,12">
+            <Grid>
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="Auto" />
+              </Grid.ColumnDefinitions>
+              <TextBlock Text="PROFILE" Foreground="{StaticResource TextSecondary}" FontSize="10.5" FontWeight="Bold"
+                         VerticalAlignment="Center" />
+              <ComboBox x:Name="ProfileSelector" Grid.Column="2" Height="38" Padding="11,0"
+                        Foreground="{StaticResource TextPrimary}" Background="#1C263B" BorderBrush="{StaticResource CardBorder}"
+                        BorderThickness="1" FontSize="13" VerticalContentAlignment="Center" />
+              <Button x:Name="AllProfilesButton" Grid.Column="4" Content="Connect all" Width="142" Height="38"
+                      Style="{StaticResource SecondaryButtonStyle}" />
+            </Grid>
+          </Border>
+
           <Border x:Name="StatusCard" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource CardBorder}"
                   BorderThickness="1" CornerRadius="20" Padding="26,24">
             <Grid>
@@ -468,6 +497,7 @@ try {
 $RequiredControlNames = @(
   "TitleBar", "MinimizeButton", "CloseButton", "StatusDot", "StatusBadge", "StatusTitle",
   "StatusDescription", "RefreshButton", "IssuePanel", "IssueText", "PrimaryActionButton",
+  "ProfilePanel", "ProfileSelector", "AllProfilesButton",
   "ReadonlyModeButton", "FullModeButton", "ReadonlyCheck", "FullCheck", "AdvancedExpander",
   "ConfigureButton", "DoctorButton", "WindowAccessButton", "DashboardButton", "LogsButton",
   "CliButton", "CopyDiagnosticsButton", "LastActionPanel", "LastActionText", "BusyIndicator", "FooterStatus"
@@ -495,6 +525,7 @@ if ($ValidateOnly) {
     resolvedControlCount = $Controls.Count
     fixtureStates = @($Fixtures | ForEach-Object { [string]$_.state })
     fixtureActions = @($Fixtures | ForEach-Object { [string]$_.primaryAction })
+    multiProfileControlsAvailable = $null -ne $Controls.ProfileSelector -and $null -ne $Controls.AllProfilesButton
   } | ConvertTo-Json -Depth 4
   $Window.Close()
   return
@@ -536,6 +567,13 @@ function ConvertTo-ControlCenterArgument([string]$Value) {
 
 $script:CurrentStatus = $null
 $script:CurrentPresentation = $null
+$script:ProfileRecords = @()
+$script:ProfilesInitialized = $false
+$script:MultiProfileMode = $false
+$script:AllProfilesActive = $false
+$script:SelectedProfileId = $ProfileId
+$script:ProfileSignature = ""
+$script:UpdatingProfileSelector = $false
 $script:ActiveCommand = $null
 $script:NextRefreshAt = [DateTimeOffset]::MinValue
 $script:Closing = $false
@@ -545,10 +583,14 @@ function Set-ControlCenterBusy([bool]$Busy, [string]$Label) {
   if (-not [string]::IsNullOrWhiteSpace($Label)) { $Controls.FooterStatus.Text = $Label }
   foreach ($Name in @(
     "PrimaryActionButton", "RefreshButton", "ReadonlyModeButton", "FullModeButton",
-    "ConfigureButton", "DoctorButton", "WindowAccessButton"
+    "ConfigureButton", "DoctorButton", "WindowAccessButton", "ProfileSelector", "AllProfilesButton"
   )) {
     $Controls[$Name].IsEnabled = -not $Busy
   }
+}
+
+function Get-ControlCenterProfileId {
+  return [string]$script:SelectedProfileId
 }
 
 function Show-ControlCenterMessage([string]$Message, [bool]$IsError = $false) {
@@ -597,6 +639,83 @@ function Set-ControlCenterPresentation([object]$Presentation, [object]$Status) {
   $Controls.DashboardButton.IsEnabled = -not $Preview -and $null -ne $Status -and -not [string]::IsNullOrWhiteSpace([string]$Status.adminUi)
   $Controls.LogsButton.IsEnabled = -not $Preview
   $Controls.CopyDiagnosticsButton.IsEnabled = -not $Preview -and $null -ne $Status
+}
+
+function Show-ControlCenterSelectedProfile {
+  $Selected = @($script:ProfileRecords | Where-Object { [string]$_.id -ceq $script:SelectedProfileId } | Select-Object -First 1)
+  if ($Selected.Count -ne 1) {
+    $script:CurrentStatus = $null
+    Set-ControlCenterPresentation (Get-ControlCenterPresentation -Status $null -StatusError "The selected profile is not registered.") $null
+    return
+  }
+
+  $Record = $Selected[0]
+  $StatusError = [string]$Record.error
+  $Status = if ([string]::IsNullOrWhiteSpace($StatusError)) { $Record.status } else { $null }
+  $script:CurrentStatus = $Status
+  Set-ControlCenterPresentation (Get-ControlCenterPresentation -Status $Status -StatusError $StatusError) $Status
+}
+
+function Set-ControlCenterProfileRecords {
+  param(
+    [Parameter(Mandatory = $true)]
+    [AllowEmptyCollection()]
+    [object[]]$Records
+  )
+
+  if (@($Records).Count -lt 1) { throw "The profile status response did not contain a profile." }
+  $script:ProfileRecords = @($Records)
+  $script:ProfilesInitialized = $true
+  $script:MultiProfileMode = @($Records).Count -gt 1
+  $Controls.ProfilePanel.Visibility = if ($script:MultiProfileMode) { "Visible" } else { "Collapsed" }
+
+  $ProfileIds = @($Records | ForEach-Object { [string]$_.id })
+  $NewSignature = $ProfileIds -join "|"
+  if ($NewSignature -cne $script:ProfileSignature) {
+    $script:UpdatingProfileSelector = $true
+    try {
+      $Controls.ProfileSelector.Items.Clear()
+      foreach ($Record in @($Records)) {
+        $Item = [Windows.Controls.ComboBoxItem]::new()
+        $Item.Tag = [string]$Record.id
+        $Item.Content = [string]$Record.displayName
+        $Item.ToolTip = [string]$Record.id
+        $null = $Controls.ProfileSelector.Items.Add($Item)
+      }
+      $script:ProfileSignature = $NewSignature
+    } finally {
+      $script:UpdatingProfileSelector = $false
+    }
+  }
+
+  if ($ProfileIds -cnotcontains $script:SelectedProfileId) { $script:SelectedProfileId = $ProfileIds[0] }
+  $script:UpdatingProfileSelector = $true
+  try {
+    for ($Index = 0; $Index -lt $Controls.ProfileSelector.Items.Count; $Index += 1) {
+      if ([string]$Controls.ProfileSelector.Items[$Index].Tag -ceq $script:SelectedProfileId) {
+        $Controls.ProfileSelector.SelectedIndex = $Index
+        break
+      }
+    }
+  } finally {
+    $script:UpdatingProfileSelector = $false
+  }
+
+  $ActiveCount = @($Records | Where-Object {
+    [string]::IsNullOrWhiteSpace([string]$_.error) -and (Test-ControlCenterManagedStatusActive $_.status)
+  }).Count
+  $script:AllProfilesActive = $ActiveCount -eq @($Records).Count
+  $Controls.AllProfilesButton.Content = if ($script:AllProfilesActive) {
+    "Disconnect all"
+  } elseif ($ActiveCount -gt 0) {
+    "Connect remaining"
+  } else {
+    "Connect all"
+  }
+  $Controls.AllProfilesButton.ToolTip = "$ActiveCount of $(@($Records).Count) registered profiles are active or recovering."
+  $Controls.ProfileSelector.IsEnabled = $script:MultiProfileMode -and $null -eq $script:ActiveCommand
+  $Controls.AllProfilesButton.IsEnabled = $script:MultiProfileMode -and $null -eq $script:ActiveCommand -and -not $Preview
+  Show-ControlCenterSelectedProfile
 }
 
 function Start-ControlCenterCommand {
@@ -660,35 +779,38 @@ function Complete-ControlCenterCommand {
 function Request-ControlCenterStatus {
   if ($null -ne $script:ActiveCommand -or $Preview) { return }
   $null = Start-ControlCenterCommand `
-    -ScriptPath $StatusScript `
-    -Arguments @("-ProfileId", $ProfileId, "-Snapshot") `
-    -Label "Checking connection..." `
+    -ScriptPath $ManagerScript `
+    -Arguments @("-Action", "status-all") `
+    -Label "Checking registered connections..." `
     -OnComplete {
       param($ExitCode, $StandardOutput, $StandardError)
-      $Status = $null
       $StatusError = ""
       if ($ExitCode -eq 0) {
         try {
-          $Status = ($StandardOutput | Out-String) | ConvertFrom-Json -ErrorAction Stop
+          $Response = ($StandardOutput | Out-String) | ConvertFrom-Json -ErrorAction Stop
+          if ([string]$Response.schema -cne "hybrid.multiProfileStatus.v1") {
+            throw "The status response used an unknown schema."
+          }
+          Set-ControlCenterProfileRecords -Records @($Response.profiles)
         } catch {
-          $StatusError = "The status response could not be read."
+          $StatusError = "The registered profile status response could not be read. $([string]$_.Exception.Message)"
         }
       } else {
         $StatusError = (@($StandardError, $StandardOutput) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
       }
-      $script:CurrentStatus = $Status
-      $Presentation = Get-ControlCenterPresentation -Status $Status -StatusError $StatusError
-      Set-ControlCenterPresentation $Presentation $Status
+      if (-not [string]::IsNullOrWhiteSpace($StatusError)) {
+        $script:CurrentStatus = $null
+        Set-ControlCenterPresentation (Get-ControlCenterPresentation -Status $null -StatusError $StatusError) $null
+        Show-ControlCenterMessage "Status check failed. Open Setup & troubleshooting for connection tools." $true
+      }
       $Now = [DateTimeOffset]::Now
       $Controls.FooterStatus.Text = "Updated $($Now.ToString('h:mm:ss tt'))"
       $script:NextRefreshAt = $Now.AddSeconds(15)
-      if (-not [string]::IsNullOrWhiteSpace($StatusError)) {
-        Show-ControlCenterMessage "Status check failed. Open Setup & troubleshooting for connection tools." $true
-      }
     }
 }
 
 function Invoke-ControlCenterLifecycle([string]$Action) {
+  $SelectedProfileId = Get-ControlCenterProfileId
   $ScriptPath = if ($Action -ceq "start") { $StartScript } else { $StopScript }
   $Label = if ($Action -ceq "start") { "Connecting securely..." } else { "Disconnecting..." }
   $Completion = {
@@ -703,15 +825,45 @@ function Invoke-ControlCenterLifecycle([string]$Action) {
   }.GetNewClosure()
   $null = Start-ControlCenterCommand `
     -ScriptPath $ScriptPath `
-    -Arguments @("-ProfileId", $ProfileId) `
+    -Arguments @("-ProfileId", $SelectedProfileId) `
+    -Label $Label `
+    -OnComplete $Completion
+}
+
+function Invoke-ControlCenterAllLifecycle {
+  $Action = if ($script:AllProfilesActive) { "stop-all" } else { "start-all" }
+  if ($Action -ceq "stop-all") {
+    $Choice = [Windows.MessageBox]::Show(
+      "Disconnect every registered profile?",
+      "Disconnect all profiles",
+      [Windows.MessageBoxButton]::YesNo,
+      [Windows.MessageBoxImage]::Question
+    )
+    if ($Choice -ne [Windows.MessageBoxResult]::Yes) { return }
+  }
+  $Label = if ($Action -ceq "start-all") { "Connecting registered profiles..." } else { "Disconnecting registered profiles..." }
+  $Completion = {
+    param($ExitCode, $StandardOutput, $StandardError)
+    $Combined = (@($StandardOutput, $StandardError) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) -join [Environment]::NewLine
+    if ($ExitCode -eq 0) {
+      Show-ControlCenterMessage $(if ([string]::IsNullOrWhiteSpace($Combined)) { "$Label completed." } else { $Combined })
+    } else {
+      Show-ControlCenterMessage $(if ([string]::IsNullOrWhiteSpace($Combined)) { "$Label failed." } else { $Combined }) $true
+    }
+    Request-ControlCenterStatus
+  }.GetNewClosure()
+  $null = Start-ControlCenterCommand `
+    -ScriptPath $ManagerScript `
+    -Arguments @("-Action", $Action) `
     -Label $Label `
     -OnComplete $Completion
 }
 
 function Invoke-ControlCenterDoctor {
+  $SelectedProfileId = Get-ControlCenterProfileId
   $null = Start-ControlCenterCommand `
     -ScriptPath $DoctorScript `
-    -Arguments @("-ProfileId", $ProfileId, "-Online") `
+    -Arguments @("-ProfileId", $SelectedProfileId, "-Online") `
     -Label "Running connection check..." `
     -OnComplete {
       param($ExitCode, $StandardOutput, $StandardError)
@@ -726,6 +878,7 @@ function Invoke-ControlCenterDoctor {
 }
 
 function Invoke-ControlCenterPreset([string]$PermissionPreset) {
+  $SelectedProfileId = Get-ControlCenterProfileId
   if ($null -ne $script:CurrentStatus -and [string]$script:CurrentStatus.permissionPreset -ceq $PermissionPreset) { return }
   if ($PermissionPreset -ceq "workstation") {
     $Choice = [Windows.MessageBox]::Show(
@@ -749,7 +902,7 @@ function Invoke-ControlCenterPreset([string]$PermissionPreset) {
   }.GetNewClosure()
   $null = Start-ControlCenterCommand `
     -ScriptPath $ControlScript `
-    -Arguments @("-Action", "preset", "-ProfileId", $ProfileId, "-PermissionPreset", $PermissionPreset) `
+    -Arguments @("-Action", "preset", "-ProfileId", $SelectedProfileId, "-PermissionPreset", $PermissionPreset) `
     -Label $Label `
     -OnComplete $Completion
 }
@@ -788,6 +941,12 @@ $Controls.RefreshButton.Add_Click({
   $script:NextRefreshAt = [DateTimeOffset]::MinValue
   Request-ControlCenterStatus
 })
+$Controls.ProfileSelector.Add_SelectionChanged({
+  if ($script:UpdatingProfileSelector -or $null -eq $Controls.ProfileSelector.SelectedItem) { return }
+  $script:SelectedProfileId = [string]$Controls.ProfileSelector.SelectedItem.Tag
+  Show-ControlCenterSelectedProfile
+})
+$Controls.AllProfilesButton.Add_Click({ Invoke-ControlCenterAllLifecycle })
 $Controls.PrimaryActionButton.Add_Click({
   if ($null -eq $script:CurrentPresentation) { return }
   switch ([string]$script:CurrentPresentation.primaryAction) {
@@ -798,9 +957,9 @@ $Controls.PrimaryActionButton.Add_Click({
 })
 $Controls.ReadonlyModeButton.Add_Click({ Invoke-ControlCenterPreset "readonly" })
 $Controls.FullModeButton.Add_Click({ Invoke-ControlCenterPreset "workstation" })
-$Controls.ConfigureButton.Add_Click({ Open-ControlCenterTool $ConfigureScript @("-ProfileId", $ProfileId) })
+$Controls.ConfigureButton.Add_Click({ Open-ControlCenterTool $ConfigureScript @("-ProfileId", (Get-ControlCenterProfileId)) })
 $Controls.DoctorButton.Add_Click({ Invoke-ControlCenterDoctor })
-$Controls.WindowAccessButton.Add_Click({ Open-ControlCenterTool $ControlScript @("-Action", "windows", "-ProfileId", $ProfileId) })
+$Controls.WindowAccessButton.Add_Click({ Open-ControlCenterTool $ControlScript @("-Action", "windows", "-ProfileId", (Get-ControlCenterProfileId)) })
 $Controls.DashboardButton.Add_Click({
   if ($null -eq $script:CurrentStatus) { return }
   $AdminUi = [string]$script:CurrentStatus.adminUi
@@ -816,13 +975,13 @@ $Controls.LogsButton.Add_Click({
   }
   if (Test-Path -LiteralPath $StateDirectory -PathType Container) { Open-ControlCenterPath $StateDirectory }
 })
-$Controls.CliButton.Add_Click({ Open-ControlCenterTool $ControlScript @("-ProfileId", $ProfileId) })
+$Controls.CliButton.Add_Click({ Open-ControlCenterTool $ControlScript @("-ProfileId", (Get-ControlCenterProfileId)) })
 $Controls.CopyDiagnosticsButton.Add_Click({
   if ($null -eq $script:CurrentStatus) { return }
   $Diagnostic = [ordered]@{
     schema = "hybrid.controlCenterDiagnostics.v1"
     capturedAt = [DateTimeOffset]::UtcNow.ToString("o")
-    profileId = $ProfileId
+    profileId = Get-ControlCenterProfileId
     uiState = if ($null -ne $script:CurrentPresentation) { [string]$script:CurrentPresentation.state } else { "unknown" }
     permissionPreset = [string]$script:CurrentStatus.permissionPreset
     running = [bool]$script:CurrentStatus.running
@@ -871,6 +1030,14 @@ if ($Preview) {
     stateDirectory = Join-Path $ToolRoot "runtime"
   }
   $script:CurrentStatus = $PreviewStatus
+  $script:ProfilesInitialized = $true
+  $script:ProfileRecords = @([pscustomobject]@{
+    id = $ProfileId
+    displayName = "Hybrid Workstation"
+    permissionPreset = "workstation"
+    status = $PreviewStatus
+    error = $null
+  })
   Set-ControlCenterPresentation (Get-ControlCenterPresentation -Status $PreviewStatus -StatusError "") $PreviewStatus
   $Controls.FooterStatus.Text = "Preview mode / no system actions"
   Set-ControlCenterBusy $false "Preview mode / no system actions"

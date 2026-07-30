@@ -33,6 +33,14 @@ entries. PowerShell deliberately keeps the broader current-Windows-user boundary
 The permission preset registers eight inspection tools in `readonly` or all
 fourteen tools in `workstation`.
 
+The Control Center reads registered profile status with bounded concurrency. A
+single profile uses a direct fast path without a runspace pool; multiple-profile
+status work is capped at four concurrent workers and lifecycle work at three.
+Each mutation still uses its existing profile-specific mutex. A separate
+registry mutex serializes profile installation and permission-preset updates;
+profile and registry files are staged, verified, and rolled back together on
+commit failure.
+
 `project_resume(path)` resolves the requested path through the same direct-tool
 boundary, discovers its Git root, validates that canonical root again, then runs
 only bounded read-only status, log, and diff-stat commands. This allows an

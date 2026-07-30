@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-  [ValidateSet("menu", "start", "stop", "status", "doctor", "preset", "windows")]
+  [ValidateSet("menu", "profiles", "start", "stop", "restart", "status", "status-all", "start-all", "stop-all", "restart-all", "doctor", "preset", "windows")]
   [string]$Action = "menu",
   [string]$ProfileId = "workstation",
   [ValidateSet("readonly", "workstation")]
@@ -8,11 +8,19 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ManagerScript = Join-Path $PSScriptRoot "tunnel-manager.ps1"
 function Invoke-ControlAction([string]$Selected) {
   switch ($Selected) {
     "start" { & (Join-Path $PSScriptRoot "start-tunnel.ps1") -ProfileId $ProfileId }
     "stop" { & (Join-Path $PSScriptRoot "stop-tunnel.ps1") -ProfileId $ProfileId }
+    "restart" {
+      & (Join-Path $PSScriptRoot "stop-tunnel.ps1") -ProfileId $ProfileId
+      & (Join-Path $PSScriptRoot "start-tunnel.ps1") -ProfileId $ProfileId
+    }
     "status" { & (Join-Path $PSScriptRoot "tunnel-status.ps1") -ProfileId $ProfileId -Snapshot }
+    { $_ -in @("profiles", "status-all", "start-all", "stop-all", "restart-all") } {
+      & $ManagerScript -Action $Selected
+    }
     "doctor" { & (Join-Path $PSScriptRoot "Doctor.ps1") -ProfileId $ProfileId -Online }
     "windows" { & (Join-Path $PSScriptRoot "Manage-Window-Grants.ps1") -ProfileId $ProfileId }
     "preset" {
@@ -51,8 +59,24 @@ Write-Host "3. Stop"
 Write-Host "4. Doctor"
 Write-Host "5. Read-only lock settings"
 Write-Host "6. Window access"
+Write-Host "7. Start all registered profiles"
+Write-Host "8. Status of all registered profiles"
+Write-Host "9. Stop all registered profiles"
+Write-Host "10. Restart active profiles"
 Write-Host "0. Exit"
 $Choice = Read-Host "Select"
-$Selected = switch ($Choice) { "1" { "start" } "2" { "status" } "3" { "stop" } "4" { "doctor" } "5" { "preset" } "6" { "windows" } default { $null } }
+$Selected = switch ($Choice) {
+  "1" { "start" }
+  "2" { "status" }
+  "3" { "stop" }
+  "4" { "doctor" }
+  "5" { "preset" }
+  "6" { "windows" }
+  "7" { "start-all" }
+  "8" { "status-all" }
+  "9" { "stop-all" }
+  "10" { "restart-all" }
+  default { $null }
+}
 if ($Selected) { Invoke-ControlAction $Selected }
 if ($Host.Name -match "ConsoleHost") { Read-Host "Press Enter to close" | Out-Null }
