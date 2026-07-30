@@ -220,6 +220,95 @@ describe("workstation filesystem", () => {
     await expect(readTextFile({ context, path: join(alias, "secret.txt"), startLine: 1, maxLines: 10 })).rejects.toThrow("foreign-profile");
   });
 
+  it("protects runtime credentials, configured grants, secret files, and canonical aliases", async () => {
+    const { context, outside } = await fixture();
+    const runtime = join(context.engineRoot, "runtime");
+    const runtimeSecret = join(runtime, ".env.local");
+    const configuredGrants = join(outside, "ui_grants.json");
+    const envSecret = join(outside, ".env");
+    const privateKey = join(outside, "private.pem");
+    const safeTemplate = join(outside, ".env.template");
+    await mkdir(runtime, { recursive: true });
+    await Promise.all([
+      writeFile(runtimeSecret, "TUNNEL_KEY=runtime-secret\n", "utf8"),
+      writeFile(configuredGrants, "grants-secret\n", "utf8"),
+      writeFile(envSecret, "API_TOKEN=file-secret\n", "utf8"),
+      writeFile(privateKey, "private-key-secret\n", "utf8"),
+      writeFile(safeTemplate, "API_TOKEN=replace-me\n", "utf8"),
+    ]);
+
+    const previousGrantsPath = process.env.CHATGPT_HYBRID_UI_GRANTS_PATH;
+    process.env.CHATGPT_HYBRID_UI_GRANTS_PATH = configuredGrants;
+    try {
+      for (const path of [runtimeSecret, configuredGrants, envSecret, privateKey]) {
+        await expect(readTextFile({ context, path, startLine: 1, maxLines: 10 }))
+          .rejects.toThrow(/Protected credential/u);
+      }
+      await expect(readTextFile({ context, path: safeTemplate, startLine: 1, maxLines: 10 }))
+        .resolves.toMatchObject({ text: "API_TOKEN=replace-me\n" });
+
+      const newRuntimeFile = join(runtime, "must-not-exist.txt");
+      await expect(writeTextFile({
+        context,
+        path: newRuntimeFile,
+        content: "blocked\n",
+        expectedSha256: "absent",
+        createParents: false,
+      })).rejects.toThrow(/Protected credential/u);
+      await expect(access(newRuntimeFile)).rejects.toThrow();
+
+      const listing = await listDirectory({ context, path: outside, depth: 2, maxEntries: 100 });
+      expect(listing.entries.map((entry) => entry.path)).not.toEqual(expect.arrayContaining([
+        configuredGrants,
+        envSecret,
+        privateKey,
+      ]));
+      expect(listing.entries.some((entry) => entry.path === safeTemplate)).toBe(true);
+
+      const searched = await searchFiles({
+        context,
+        path: outside,
+        query: "secret",
+        mode: "content",
+        regex: false,
+        globs: [],
+        includeHidden: true,
+        respectIgnoreFiles: false,
+        maxResults: 20,
+      });
+      expect(searched.matches).toEqual([]);
+
+      const alias = join(outside, "runtime-alias");
+      await symlink(runtime, alias, process.platform === "win32" ? "junction" : "dir");
+      await expect(readTextFile({ context, path: join(alias, ".env.local"), startLine: 1, maxLines: 10 }))
+        .rejects.toThrow(/Protected credential/u);
+      const aliasedListing = await listDirectory({ context, path: outside, depth: 1, maxEntries: 100 });
+      expect(aliasedListing.entries.some((entry) => entry.path === alias)).toBe(false);
+    } finally {
+      if (previousGrantsPath === undefined) delete process.env.CHATGPT_HYBRID_UI_GRANTS_PATH;
+      else process.env.CHATGPT_HYBRID_UI_GRANTS_PATH = previousGrantsPath;
+    }
+  });
+
+  it("preserves mixed-newline pagination, trailing empty lines, and reads beyond EOF", async () => {
+    const { context, outside } = await fixture();
+    const path = join(outside, "mixed-newlines.txt");
+    await writeFile(path, "one\r\ntwo\rthree\nfour\n", "utf8");
+
+    const middle = await readTextFile({ context, path, startLine: 2, maxLines: 2 });
+    expect(middle).toMatchObject({
+      text: "two\nthree",
+      startLine: 2,
+      endLine: 3,
+      totalLines: 5,
+      truncated: true,
+    });
+    const trailing = await readTextFile({ context, path, startLine: 4, maxLines: 2 });
+    expect(trailing).toMatchObject({ text: "four\n", endLine: 5, totalLines: 5, truncated: true });
+    const beyond = await readTextFile({ context, path, startLine: 10, maxLines: 2 });
+    expect(beyond).toMatchObject({ text: "", endLine: 9, totalLines: 5, truncated: true });
+  });
+
   it("allows an unmanaged sibling whose name only shares a foreign-root prefix", async () => {
     const { context, foreign } = await fixture();
     const sibling = `${foreign}-backup`;

@@ -4,13 +4,13 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { verifiedWorkstationNativeHelper } from "./native-helper.js";
 import type { ProjectContext } from "./profile.js";
 import { makeSafeEnvironment, resolvePowerShellExecutable, runProcess } from "./process.js";
 
 const MODULE_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 const WINDOW_OBSERVER = resolve(MODULE_DIRECTORY, "..", "scripts", "window-observer.ps1");
 const GRANTS_ENVIRONMENT_KEY = "CHATGPT_HYBRID_UI_GRANTS_PATH";
-const CAPTURE_HELPER_ENVIRONMENT_KEY = "CHATGPT_HYBRID_WINDOW_CAPTURE_HELPER";
 const MAX_GRANTS_BYTES = 1024 * 1024;
 const MAX_CAPTURE_BYTES = 32 * 1024 * 1024;
 const WINDOW_REF_PATTERN = /^window:[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
@@ -343,25 +343,6 @@ function identityArguments(grant: Grant): string[] {
   ];
 }
 
-async function verifiedNativeHelper(context: ProjectContext): Promise<string | undefined> {
-  const configured = process.env[CAPTURE_HELPER_ENVIRONMENT_KEY];
-  if (configured && !isAbsolute(configured)) throw new Error(`${CAPTURE_HELPER_ENVIRONMENT_KEY} must be absolute.`);
-  const path = resolve(configured ?? resolve(context.engineRoot, "runtime-distribution", "window-capture", "win-x64", "HybridWindowCapture.exe"));
-  const hashPath = `${path}.sha256`;
-  const [info, hashInfo] = await Promise.all([lstat(path).catch(() => undefined), lstat(hashPath).catch(() => undefined)]);
-  if (!info && !hashInfo) return undefined;
-  if (!info || !hashInfo || !info.isFile() || info.isSymbolicLink() || info.nlink > 1 || info.size < 100_000 || info.size > 32 * 1024 * 1024
-      || !hashInfo.isFile() || hashInfo.isSymbolicLink() || hashInfo.nlink > 1 || hashInfo.size > 4096) {
-    throw new Error("Native window capture distribution is incomplete or unsafe.");
-  }
-  const expectedText = new TextDecoder("utf-8", { fatal: true }).decode(await readFile(hashPath)).trim();
-  const match = /^([a-f0-9]{64})\s+HybridWindowCapture\.exe$/iu.exec(expectedText);
-  if (!match) throw new Error("Native window capture checksum file is malformed.");
-  const observed = createHash("sha256").update(await readFile(path)).digest("hex");
-  if (observed !== match[1]!.toLocaleLowerCase("en-US")) throw new Error("Native window capture checksum mismatch.");
-  return path;
-}
-
 async function captureWithNative(helper: string, grant: Grant, outputPath: string): Promise<void> {
   const result = await runProcess(helper, ["capture", ...identityArguments(grant), "--output", outputPath], {
     cwd: resolve(MODULE_DIRECTORY, ".."), timeoutMs: 12_000, maxStdoutBytes: 64 * 1024,
@@ -381,7 +362,7 @@ export async function captureGrantedWindow(context: ProjectContext, windowRef: s
   let backend: "windows_graphics_capture" | "print_window_fallback" = "windows_graphics_capture";
   let fallbackUsed = false;
   try {
-    const helper = await verifiedNativeHelper(context);
+    const helper = await verifiedWorkstationNativeHelper(context);
     if (helper) {
       try {
         await captureWithNative(helper, grant, outputPath);

@@ -10,13 +10,20 @@ with status, output, and cancellation.
 
 ## Release status
 
-Version 1.3 adds optional trusted-app observation rules. A local user may keep
-a one-time exact process grant or register an exact executable path plus a stable
-window-title substring. After an application restart, ChatGPT auto-rebinds only
-when exactly one live window matches and no rule from another profile claims the
-same window. Ambiguous or colliding matches fail closed. Windows Graphics Capture
-remains the primary GPU-aware backend with target-only `PrintWindow` fallback,
-and the package still provides no UI clicking or text input.
+Version 1.4 hardens the direct filesystem surface against credential, runtime,
+private-key, browser-profile, and canonical-link access while retaining the
+current-user PowerShell boundary. It also adds `project_resume(path)` for an
+unrelated Git worktree, a checksum-pinned NativeAOT `shell-host` with the prior
+PowerShell Job Object path as fallback, deterministic build/tool-schema IDs,
+lint and coverage gates, bounded directory concurrency, single-pass text
+pagination, and installation-independent stdio, performance, and native-shell
+smokes.
+
+The public server remains a fourteen-tool, single-profile stdio MCP. It does not
+add an HTTP MCP listener. Trusted-app window observation from version 1.3 remains
+available: ambiguous or cross-profile matches fail closed, Windows Graphics
+Capture remains the primary backend with target-only `PrintWindow` fallback,
+and there is still no UI clicking or text input.
 
 The source, tests, setup flow, native helper, and release package have completed
 automated validation on Windows x64. A clean machine with a real OpenAI Secure
@@ -61,7 +68,23 @@ Official setup references:
 The default operating profile is created at `%USERPROFILE%\Hybrid Workstation`.
 It is a small Git repository containing durable instructions and the local
 profile manifest. The profile can access other paths available to the current
-Windows account. Windows ACLs and UAC remain the real machine boundary.
+Windows account, except that direct file and Git tools deny known credential,
+runtime, private-key, browser-profile, and other registered-profile paths.
+PowerShell still runs with the current Windows account and can access anything
+that account can access. Windows ACLs and UAC remain the real machine boundary.
+
+## Control Center
+
+`Hybrid MCP Control.cmd` and the installed desktop shortcut open a simple
+Windows Control Center. The main screen shows only the connection state, one
+Connect or Disconnect button, and the current access mode. Tunnel setup,
+connection checks, window access, logs, and the classic text menu remain under
+**Setup & troubleshooting**.
+
+The Control Center uses the same fail-closed start, stop, status, recovery, and
+permission scripts as the command line. It does not store or display the tunnel
+runtime key. Status refresh is local and runs every 15 seconds; the online
+connection check runs only when requested.
 
 ## Window observation
 
@@ -113,6 +136,11 @@ restarts an active tunnel when changing the lock. Most users should leave it on
 - Active connection-owned PowerShell jobs are cancelled when that exact MCP
   connection closes. Completed evidence remains inspectable after reconnect.
 - Commands are never replayed automatically.
+- `workstation_context` reports `transport: "stdio"`, `buildRevision`, and
+  `toolSchemaRevision` so a running build and tool contract can be identified.
+- `project_resume` accepts an optional path and runs fixed read-only Git
+  commands there. It permits unrelated worktrees but still rejects another
+  registered profile and protected direct-file locations.
 
 ## Commands
 
@@ -122,6 +150,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Configure-Tunnel
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Doctor.ps1 -Online
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Manage-Window-Grants.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Set-Permission-Preset.ps1 -PermissionPreset readonly
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File scripts\ControlCenter.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action start
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action status
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\Control.ps1 -Action stop
@@ -132,8 +161,11 @@ Local development:
 ```powershell
 npm.cmd ci
 npm.cmd run check
+npm.cmd run security:audit
 npm.cmd run build:native
-npm.cmd run smoke:stdio -- workstation
+npm.cmd run smoke:native-shell
+npm.cmd run smoke:stdio
+npm.cmd run release
 ```
 
 ## What is intentionally not included

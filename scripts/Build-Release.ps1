@@ -9,6 +9,9 @@ $Version = [string]$Package.version
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "package.json version is invalid." }
 $VersionParts = $Version.Split('.')
 $ReleaseVersion = if ($VersionParts[2] -eq '0') { "$($VersionParts[0]).$($VersionParts[1])" } else { $Version }
+$BuildInfoOutput = @(& node.exe (Join-Path $ToolRoot "scripts\generate-build-info.mjs") 2>&1)
+if ($LASTEXITCODE -ne 0) { throw "Build identity generation failed: $($BuildInfoOutput -join [Environment]::NewLine)" }
+Write-Verbose ($BuildInfoOutput -join [Environment]::NewLine)
 
 $ReleaseRoot = Join-Path $ToolRoot "release"
 $ArchiveName = "Hybrid-Workstation-MCP-v$ReleaseVersion.zip"
@@ -20,7 +23,7 @@ $NativeDistribution = Join-Path $StagingRoot "runtime-distribution\window-captur
 $Include = @(
   ".gitattributes", ".gitignore", "AGENTS.md", "Configure Tunnel.cmd", "Hybrid MCP Control.cmd", "Install.cmd",
   "README.md", "SECURITY.md", "THIRD_PARTY_NOTICES.md", "LICENSE", "package.json", "package-lock.json",
-  "tsconfig.json", "docs", "native", "scripts", "src", "templates", "tests"
+  "biome.json", "tsconfig.json", "vitest.config.ts", "docs", "native", "scripts", "src", "templates", "tests"
 )
 $TextExtensions = @(".cmd", ".cs", ".csproj", ".gitattributes", ".gitignore", ".json", ".md", ".mjs", ".ps1", ".ts", ".txt", ".yaml", ".yml")
 
@@ -88,6 +91,11 @@ try {
     } | Select-Object -First 1
     if ($ForbiddenEntry) { throw "Release archive contains forbidden entry: $($ForbiddenEntry.Name)" }
     foreach ($RequiredEntry in @(
+      "Hybrid-Workstation-MCP/biome.json",
+      "Hybrid-Workstation-MCP/vitest.config.ts",
+      "Hybrid-Workstation-MCP/src/build-info.generated.ts",
+      "Hybrid-Workstation-MCP/scripts/ControlCenter.ps1",
+      "Hybrid-Workstation-MCP/scripts/test-control-center.ps1",
       "Hybrid-Workstation-MCP/runtime-distribution/window-capture/win-x64/HybridWindowCapture.exe",
       "Hybrid-Workstation-MCP/runtime-distribution/window-capture/win-x64/HybridWindowCapture.exe.sha256",
       "Hybrid-Workstation-MCP/native/window-capture/Program.cs"

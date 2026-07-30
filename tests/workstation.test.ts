@@ -49,6 +49,9 @@ describe("workstation bootstrap context", () => {
     expect(first.permissionPreset).toBe("workstation");
     expect(first.contextRevision).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.contextRevision).toBe(second.contextRevision);
+    expect(first.transport).toBe("stdio");
+    expect(first.buildRevision).toMatch(/^[a-f0-9]{64}$/u);
+    expect(first.toolSchemaRevision).toMatch(/^[a-f0-9]{64}$/u);
     expect(first.bootstrapEntries.map((entry) => entry.relativePath)).toEqual(["AGENTS.md", "docs/HANDOFF.md"]);
     expect(first.bootstrapEntries[0]?.content).toBe("Always verify.\n");
     expect(first.bootstrapEntries[1]?.content).toBe("Current task: context parity.\n");

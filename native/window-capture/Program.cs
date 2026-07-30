@@ -1,19 +1,25 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
 using Windows.Graphics.Capture;
 using Windows.Graphics.DirectX;
 using Windows.Graphics.DirectX.Direct3D11;
 using Windows.Graphics.Imaging;
 using WinRT;
 
-const string Version = "1.3.0";
+const string Version = "1.4.0";
 try
 {
     if (args.Length == 1 && args[0] == "--self-test")
     {
         Console.WriteLine($"{{\"ok\":true,\"version\":\"{Version}\",\"captureSupported\":{GraphicsCaptureSession.IsSupported().ToString().ToLowerInvariant()},\"architecture\":\"{RuntimeInformation.ProcessArchitecture}\"}}");
         return 0;
+    }
+    if (args.Length > 0 && args[0] == "shell-host")
+    {
+        return await RunShellHostAsync(ParseShellHostArguments(args));
     }
 
     var options = ParseCaptureArguments(args);
@@ -28,6 +34,25 @@ catch (Exception error)
 {
     Console.Error.WriteLine(error.Message);
     return 1;
+}
+
+static ShellHostOptions ParseShellHostArguments(string[] args)
+{
+    var separator = Array.IndexOf(args, "--");
+    if (separator < 2 || (separator - 1) % 2 != 0) throw new ArgumentException("Invalid shell-host command.");
+    var values = new Dictionary<string, string>(StringComparer.Ordinal);
+    for (var index = 1; index < separator; index += 2)
+    {
+        if (index + 1 >= separator || !args[index].StartsWith("--", StringComparison.Ordinal)) throw new ArgumentException("Invalid shell-host option.");
+        if (!values.TryAdd(args[index], args[index + 1])) throw new ArgumentException("Duplicate shell-host option.");
+    }
+    var powerShell = Path.GetFullPath(Required(values, "--powershell"));
+    var cwd = Path.GetFullPath(Required(values, "--cwd"));
+    var evidencePath = Path.GetFullPath(Required(values, "--containment-evidence"));
+    if (!File.Exists(powerShell)) throw new FileNotFoundException("PowerShell executable is unavailable.", powerShell);
+    if (!Directory.Exists(cwd)) throw new DirectoryNotFoundException("Shell working directory is unavailable.");
+    if (File.Exists(evidencePath) || Directory.Exists(evidencePath)) throw new IOException("Containment evidence already exists.");
+    return new ShellHostOptions(powerShell, cwd, evidencePath, args[(separator + 1)..]);
 }
 
 static CaptureOptions ParseCaptureArguments(string[] args)
@@ -80,6 +105,60 @@ static string QueryProcessPath(int pid)
         return new string(buffer, 0, capacity);
     }
     finally { Native.CloseHandle(process); }
+}
+
+static async Task<int> RunShellHostAsync(ShellHostOptions options)
+{
+    using var job = Native.CreateKillOnCloseJobAndAssignCurrentProcess();
+    WriteContainmentEvidence(options.ContainmentEvidencePath);
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = options.PowerShellPath,
+        WorkingDirectory = options.WorkingDirectory,
+        UseShellExecute = false,
+        RedirectStandardInput = true,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        CreateNoWindow = true,
+        WindowStyle = ProcessWindowStyle.Hidden,
+    };
+    foreach (var argument in options.Arguments) startInfo.ArgumentList.Add(argument);
+    startInfo.Environment["CHATGPT_HYBRID_SHELL_OWNER_PROCESS_ID"] = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
+    using var child = Process.Start(startInfo) ?? throw new InvalidOperationException("PowerShell process could not be started.");
+    var inputTask = CopyInputAsync(child);
+    var outputTask = child.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
+    var errorTask = child.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());
+    await Task.WhenAll(child.WaitForExitAsync(), inputTask, outputTask, errorTask);
+    return child.ExitCode;
+}
+
+static async Task CopyInputAsync(Process child)
+{
+    try
+    {
+        await Console.OpenStandardInput().CopyToAsync(child.StandardInput.BaseStream);
+        await child.StandardInput.BaseStream.FlushAsync();
+    }
+    catch (IOException) { }
+    catch (ObjectDisposedException) { }
+    finally { child.StandardInput.Close(); }
+}
+
+static void WriteContainmentEvidence(string path)
+{
+    using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+    using var writer = new Utf8JsonWriter(stream);
+    writer.WriteStartObject();
+    writer.WriteNumber("version", 1);
+    writer.WriteString("kind", "windows_job_object_kill_on_close");
+    writer.WriteString("host", "native_aot_shell_host");
+    writer.WriteBoolean("enforced", true);
+    writer.WriteString("jobId", Environment.GetEnvironmentVariable("CHATGPT_HYBRID_SHELL_JOB_ID") ?? string.Empty);
+    writer.WriteNumber("processId", Environment.ProcessId);
+    writer.WriteString("createdAt", DateTimeOffset.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+    writer.WriteEndObject();
+    writer.Flush();
+    stream.Flush(true);
 }
 
 static async Task<(int Width, int Height)> CaptureAsync(IntPtr hwnd, string outputPath)
@@ -165,6 +244,7 @@ static IDirect3DDevice CreateDirect3DDevice()
 }
 
 readonly record struct CaptureOptions(IntPtr Handle, int ProcessId, DateTimeOffset ProcessStartedAt, string ExecutablePath, string OutputPath);
+readonly record struct ShellHostOptions(string PowerShellPath, string WorkingDirectory, string ContainmentEvidencePath, string[] Arguments);
 readonly record struct WindowIdentity(IntPtr Handle, bool Minimized);
 
 [UnmanagedFunctionPointer(CallingConvention.StdCall)]
@@ -172,12 +252,69 @@ delegate int CreateForWindowDelegate(IntPtr @this, IntPtr window, ref Guid iid, 
 
 static class Native
 {
+    private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+    private const int JobObjectExtendedLimitInformationClass = 9;
+    private const uint HandleFlagInherit = 0x00000001;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoCounters
+    {
+        internal ulong ReadOperationCount, WriteOperationCount, OtherOperationCount;
+        internal ulong ReadTransferCount, WriteTransferCount, OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectBasicLimitInformation
+    {
+        internal long PerProcessUserTimeLimit, PerJobUserTimeLimit;
+        internal uint LimitFlags;
+        internal UIntPtr MinimumWorkingSetSize, MaximumWorkingSetSize;
+        internal uint ActiveProcessLimit;
+        internal UIntPtr Affinity;
+        internal uint PriorityClass, SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectExtendedLimitInformation
+    {
+        internal JobObjectBasicLimitInformation BasicLimitInformation;
+        internal IoCounters IoInfo;
+        internal UIntPtr ProcessMemoryLimit, JobMemoryLimit, PeakProcessMemoryUsed, PeakJobMemoryUsed;
+    }
+
+    internal static SafeFileHandle CreateKillOnCloseJobAndAssignCurrentProcess()
+    {
+        var raw = CreateJobObject(IntPtr.Zero, null);
+        if (raw == IntPtr.Zero) Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+        var handle = new SafeFileHandle(raw, true);
+        try
+        {
+            if (!SetHandleInformation(raw, HandleFlagInherit, 0)) Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+            var information = new JobObjectExtendedLimitInformation();
+            information.BasicLimitInformation.LimitFlags = JobObjectLimitKillOnJobClose;
+            if (!SetInformationJobObject(raw, JobObjectExtendedLimitInformationClass, ref information, (uint)Marshal.SizeOf<JobObjectExtendedLimitInformation>()))
+                Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+            if (!AssignProcessToJobObject(raw, GetCurrentProcess())) Marshal.ThrowExceptionForHR(Marshal.GetHRForLastWin32Error());
+            return handle;
+        }
+        catch
+        {
+            handle.Dispose();
+            throw;
+        }
+    }
+
     [DllImport("user32.dll")] internal static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern bool IsIconic(IntPtr hwnd);
     [DllImport("user32.dll")] internal static extern uint GetWindowThreadProcessId(IntPtr hwnd, out int processId);
     [DllImport("kernel32.dll", SetLastError = true)] internal static extern IntPtr OpenProcess(uint access, bool inheritHandle, int processId);
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)] internal static extern bool QueryFullProcessImageName(IntPtr process, uint flags, [Out] char[] path, ref int size);
     [DllImport("kernel32.dll")] internal static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] private static extern IntPtr CreateJobObject(IntPtr securityAttributes, string? name);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetInformationJobObject(IntPtr job, int informationClass, ref JobObjectExtendedLimitInformation information, uint informationLength);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool AssignProcessToJobObject(IntPtr job, IntPtr process);
+    [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
     [DllImport("d3d11.dll", ExactSpelling = true)]
     internal static extern int D3D11CreateDevice(IntPtr adapter, int driverType, IntPtr software, uint flags,
         IntPtr featureLevels, uint featureLevelCount, uint sdkVersion, out IntPtr device,

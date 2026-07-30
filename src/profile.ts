@@ -13,6 +13,7 @@ const DEFAULT_ENGINE_ROOT = resolve(MODULE_DIRECTORY, "..");
 const PROJECT_CONFIG_DIRECTORY = "chatgpt-hybrid-mcp";
 const PROJECT_TOOLS_DIRECTORY = "tools";
 const REGISTRY_ENVIRONMENT_KEY = "CHATGPT_HYBRID_PROFILE_REGISTRY";
+const ENGINE_ROOT_ENVIRONMENT_KEY = "CHATGPT_HYBRID_ENGINE_ROOT";
 
 export const PERMISSION_PRESETS = ["readonly", "workstation"] as const;
 export type PermissionPreset = typeof PERMISSION_PRESETS[number];
@@ -136,7 +137,7 @@ function defaultRegistryPath(engineRoot: string): string {
 
 async function readBoundedJsonFile(path: string, maxBytes: number, label: string): Promise<{ bytes: Buffer; value: unknown }> {
   const info = await lstat(path).catch(() => undefined);
-  if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink > 1 || info.size > maxBytes) {
+  if (!info?.isFile() || info.isSymbolicLink() || info.nlink > 1 || info.size > maxBytes) {
     throw new Error(`${label} is missing or unsafe.`);
   }
   const bytes = await readFile(path);
@@ -146,7 +147,11 @@ async function readBoundedJsonFile(path: string, maxBytes: number, label: string
 }
 
 async function loadTrustedRegistry(options: ProfileLoadOptions): Promise<TrustedRegistry> {
-  const engineRoot = await realpath(resolve(options.engineRoot ?? DEFAULT_ENGINE_ROOT));
+  const configuredEngineRoot = options.engineRoot ?? process.env[ENGINE_ROOT_ENVIRONMENT_KEY];
+  if (configuredEngineRoot !== undefined && !isAbsolute(configuredEngineRoot)) {
+    throw new Error(`${ENGINE_ROOT_ENVIRONMENT_KEY} must be an absolute path.`);
+  }
+  const engineRoot = await realpath(resolve(configuredEngineRoot ?? DEFAULT_ENGINE_ROOT));
   const configuredRegistryPath = options.registryPath ?? process.env[REGISTRY_ENVIRONMENT_KEY];
   if (configuredRegistryPath !== undefined && !isAbsolute(configuredRegistryPath)) {
     throw new Error(`${REGISTRY_ENVIRONMENT_KEY} must be an absolute path.`);

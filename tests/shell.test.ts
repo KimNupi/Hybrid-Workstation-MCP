@@ -116,6 +116,27 @@ describe("workstation shell", { timeout: 30_000 }, () => {
     }
   });
 
+  it("keeps PowerShell at the current-user boundary even when direct file tools protect runtime", async () => {
+    const { context } = await fixture();
+    const runtime = join(context.engineRoot, "runtime");
+    await mkdir(runtime, { recursive: true });
+    const started = await startShellJob({
+      context,
+      cwd: runtime,
+      command: "Write-Output (Get-Location).Path",
+      timeoutMs: 10_000,
+    });
+    expect((await waitForTerminal(context, started.id)).status).toBe("completed");
+    const output = await getShellOutput({
+      context,
+      id: started.id,
+      stdoutOffset: 0,
+      stderrOffset: 0,
+      maxCharacters: 20_000,
+    });
+    expect(output.stdout.text).toContain(runtime);
+  });
+
   it("reports nonzero exits and can cancel an active process tree", async () => {
     const { context, outside } = await fixture();
     const failed = await startShellJob({ context, cwd: outside, command: "Write-Error 'expected failure'\nexit 7", timeoutMs: 10_000 });

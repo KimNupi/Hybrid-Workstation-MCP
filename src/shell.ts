@@ -16,20 +16,21 @@ import { mkdir, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { z } from "zod";
+import { verifiedWorkstationNativeHelper } from "./native-helper.js";
 import type { ProjectContext } from "./profile.js";
 import {
   killProcessTree,
   makeWorkstationEnvironment,
   resolvePowerShellExecutable,
 } from "./process.js";
-import { resolveAuthorizedWorkstationPath } from "./workstation.js";
+import { resolveAuthorizedShellPath } from "./workstation.js";
 
 const JOB_ID_PATTERN = /^shell_[a-f0-9]{32}$/u;
 const MAX_ACTIVE_JOBS_PER_PROFILE = 8;
 const MAX_LOG_BYTES_PER_STREAM = 16 * 1024 * 1024;
 const MAX_STATUS_MANIFEST_BYTES = 64 * 1024;
 const PROFILE_SHELL_BUSY_EXIT_CODE = 75;
-const WINDOWS_JOB_OBJECT_CSHARP = String.raw`
+const WINDOWS_JOB_OBJECT_CSHARP = `
 using System;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
@@ -138,22 +139,22 @@ const POWERSHELL_STDIN_WRAPPER = [
   "$ownerPath = $env:CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH",
   "$ownerEvidencePath = $env:CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH",
   "$containmentEvidencePath = $env:CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH",
+  "$nativeContainment = $env:CHATGPT_HYBRID_NATIVE_CONTAINMENT -eq '1'",
+  "$ownerProcessIdText = $env:CHATGPT_HYBRID_SHELL_OWNER_PROCESS_ID",
+  "$ownerProcessId = if ($ownerProcessIdText -match '^[1-9][0-9]*$') { [int]$ownerProcessIdText } else { $PID }",
   "try {",
-  "Add-Type -TypeDefinition $env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP -Language CSharp -ErrorAction Stop",
-  "$jobObjectHandle = [HybridWorkstationMcpJobObject]::AssignCurrentProcess()",
-  "$containment = [ordered]@{ version = 1; kind = 'windows_job_object_kill_on_close'; enforced = $true; jobId = $shellJobId; processId = $PID; createdAt = [DateTime]::UtcNow.ToString('o') }",
-  "[IO.File]::WriteAllText($containmentEvidencePath, (($containment | ConvertTo-Json -Compress) + [Environment]::NewLine), $utf8)",
+  "if (-not $nativeContainment) { Add-Type -TypeDefinition $env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP -Language CSharp -ErrorAction Stop; $jobObjectHandle = [HybridWorkstationMcpJobObject]::AssignCurrentProcess(); $containment = [ordered]@{ version = 1; kind = 'windows_job_object_kill_on_close'; enforced = $true; jobId = $shellJobId; processId = $ownerProcessId; createdAt = [DateTime]::UtcNow.ToString('o') }; [IO.File]::WriteAllText($containmentEvidencePath, (($containment | ConvertTo-Json -Compress) + [Environment]::NewLine), $utf8) }",
   "$leaseMutex = [Threading.Mutex]::new($false, $env:CHATGPT_HYBRID_PROFILE_SHELL_MUTEX)",
   "try { $leaseAcquired = $leaseMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $leaseAcquired = $true }",
   `if (-not $leaseAcquired) { $ownerEvidence = ''; for ($ownerAttempt = 0; $ownerAttempt -lt 5 -and -not $ownerEvidence; $ownerAttempt++) { try { if ([IO.File]::Exists($ownerPath)) { $ownerEvidence = [IO.File]::ReadAllText($ownerPath, $utf8).Trim() } } catch {}; if (-not $ownerEvidence -and $ownerAttempt -lt 4) { Start-Sleep -Milliseconds 50 } }; $busyMessage = 'PROFILE_SHELL_LEASE_BUSY: another ChatGPT workstation shell job owns this profile shell lease.'; if ($ownerEvidence) { $busyMessage += ' owner=' + $ownerEvidence } else { $busyMessage += ' owner=initializing_or_unavailable' }; [Console]::Error.WriteLine($busyMessage); $scriptExitCode = ${PROFILE_SHELL_BUSY_EXIT_CODE} }`,
   "if ($null -eq $scriptExitCode) {",
-  "$owner = [ordered]@{ version = 1; profileId = $profileId; jobId = $shellJobId; processId = $PID; createdAt = [DateTime]::UtcNow.ToString('o'); cwd = (Get-Location).Path; leaseScope = ('profile:' + $profileId + ':shell'); containment = 'windows_job_object_kill_on_close' }",
+  "$owner = [ordered]@{ version = 1; profileId = $profileId; jobId = $shellJobId; processId = $ownerProcessId; createdAt = [DateTime]::UtcNow.ToString('o'); cwd = (Get-Location).Path; leaseScope = ('profile:' + $profileId + ':shell'); containment = 'windows_job_object_kill_on_close' }",
   "$ownerJson = ($owner | ConvertTo-Json -Compress) + [Environment]::NewLine",
   "[IO.File]::WriteAllText($ownerEvidencePath, $ownerJson, $utf8)",
   "$ownerTempPath = $ownerPath + '.' + $shellJobId + '.tmp'",
   "[IO.File]::WriteAllText($ownerTempPath, $ownerJson, $utf8)",
   "Move-Item -LiteralPath $ownerTempPath -Destination $ownerPath -Force",
-  "Remove-Item Env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP, Env:CHATGPT_HYBRID_PROFILE_ID, Env:CHATGPT_HYBRID_SHELL_JOB_ID, Env:CHATGPT_HYBRID_PROFILE_SHELL_MUTEX, Env:CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH, Env:CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH, Env:CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH -ErrorAction SilentlyContinue",
+  "Remove-Item Env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP, Env:CHATGPT_HYBRID_NATIVE_CONTAINMENT, Env:CHATGPT_HYBRID_SHELL_OWNER_PROCESS_ID, Env:CHATGPT_HYBRID_PROFILE_ID, Env:CHATGPT_HYBRID_SHELL_JOB_ID, Env:CHATGPT_HYBRID_PROFILE_SHELL_MUTEX, Env:CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH, Env:CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH, Env:CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH -ErrorAction SilentlyContinue",
   "$script = [Console]::In.ReadToEnd()",
   "& ([ScriptBlock]::Create($script))",
   "if ($null -ne $LASTEXITCODE) { $scriptExitCode = $LASTEXITCODE }",
@@ -556,7 +557,7 @@ async function startReservedShellJob(input: {
   cwd: string;
   timeoutMs: number;
 }) {
-  const cwd = await resolveAuthorizedWorkstationPath(input.context, input.cwd, "tree");
+  const cwd = await resolveAuthorizedShellPath(input.context, input.cwd, "tree");
   const cwdInfo = await stat(cwd);
   if (!cwdInfo.isDirectory()) throw new Error(`Shell cwd is not a directory: ${cwd}`);
   const id = `shell_${randomBytes(16).toString("hex")}`;
@@ -608,14 +609,33 @@ async function startReservedShellJob(input: {
     replayAllowed: false,
   });
 
+  const powershellExecutable = resolvePowerShellExecutable();
+  const powershellArguments = [
+    "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+    "-Command", POWERSHELL_STDIN_WRAPPER,
+  ];
+  const nativeHelper = await verifiedWorkstationNativeHelper(input.context);
+  const childExecutable = nativeHelper ?? powershellExecutable;
+  const childArguments = nativeHelper
+    ? [
+      "shell-host",
+      "--powershell", powershellExecutable,
+      "--cwd", cwd,
+      "--containment-evidence", paths.containmentEvidencePath,
+      "--",
+      ...powershellArguments,
+    ]
+    : powershellArguments;
   const child = spawn(
-    resolvePowerShellExecutable(),
-    ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", POWERSHELL_STDIN_WRAPPER],
+    childExecutable,
+    childArguments,
     {
       cwd,
       env: makeWorkstationEnvironment({
         CHATGPT_HYBRID_PROFILE_SHELL_MUTEX: `Local\\HybridWorkstationMcp-ProfileShell-${input.context.profile.id}`,
-        CHATGPT_HYBRID_JOB_OBJECT_CSHARP: WINDOWS_JOB_OBJECT_CSHARP,
+        ...(nativeHelper
+          ? { CHATGPT_HYBRID_NATIVE_CONTAINMENT: "1" }
+          : { CHATGPT_HYBRID_JOB_OBJECT_CSHARP: WINDOWS_JOB_OBJECT_CSHARP }),
         CHATGPT_HYBRID_PROFILE_ID: input.context.profile.id,
         CHATGPT_HYBRID_SHELL_JOB_ID: id,
         CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH: profileOwnerPath,
