@@ -149,7 +149,7 @@ describe("project resume snapshot", () => {
     expect(resume.error).toBeTruthy();
   });
 
-  it("refuses to summarize a parent repository outside the registered project root", async () => {
+  it("summarizes a parent repository outside the registered project root", async () => {
     const repositoryRoot = await mkdtemp(join(tmpdir(), "project-resume-parent-"));
     temporaryRoots.push(repositoryRoot);
     await initializeRepository(repositoryRoot);
@@ -160,7 +160,32 @@ describe("project resume snapshot", () => {
     const resume = await getProjectResume(context);
 
     expect(resume.gitAvailable).toBe(true);
-    expect(resume.isGitRepository).toBe(false);
-    expect(resume.error).toMatch(/outside the registered project root/u);
+    expect(resume.isGitRepository).toBe(true);
+    expect(resume.repositoryRoot).toBe(await realpath(repositoryRoot));
+    expect(resume.workingDirectory).toBe(childRoot);
+    expect(resume.error).toBeNull();
+  });
+
+  it("accepts an explicit unrelated repository path but rejects another registered profile", async () => {
+    const { context } = await makeContext();
+    const unrelated = await mkdtemp(join(tmpdir(), "project-resume-unrelated-"));
+    const foreign = await mkdtemp(join(tmpdir(), "project-resume-foreign-"));
+    temporaryRoots.push(unrelated, foreign);
+    await initializeRepository(unrelated);
+    await initializeRepository(foreign);
+
+    const resume = await getProjectResume(context, 3, 20, unrelated);
+    expect(resume.isGitRepository).toBe(true);
+    expect(resume.repositoryRoot).toBe(await realpath(unrelated));
+    expect(resume.workingDirectory).toBe(unrelated);
+
+    const guardedContext = Object.freeze({
+      ...context,
+      managedProjectRoots: Object.freeze([
+        ...context.managedProjectRoots,
+        Object.freeze({ profileId: "foreign-profile", primaryRoot: foreign }),
+      ]),
+    }) satisfies ProjectContext;
+    await expect(getProjectResume(guardedContext, 3, 20, foreign)).rejects.toThrow("foreign-profile");
   });
 });

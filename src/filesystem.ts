@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import type { Dirent } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -14,7 +15,7 @@ import {
 import { basename, dirname, extname, resolve } from "node:path";
 import type { ProjectContext } from "./profile.js";
 import { makeWorkstationEnvironment, runProcess } from "./process.js";
-import { resolveAuthorizedWorkstationPath } from "./workstation.js";
+import { isProtectedWorkstationPath, resolveAuthorizedWorkstationPath } from "./workstation.js";
 
 const MAX_TEXT_BYTES = 64 * 1024 * 1024;
 const MAX_WRITE_BYTES = 16 * 1024 * 1024;
@@ -121,6 +122,18 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+async function mapInBatches<T, Result>(
+  items: readonly T[],
+  batchSize: number,
+  map: (item: T) => Promise<Result>,
+): Promise<Result[]> {
+  const results: Result[] = [];
+  for (let offset = 0; offset < items.length; offset += batchSize) {
+    results.push(...await Promise.all(items.slice(offset, offset + batchSize).map(map)));
+  }
+  return results;
+}
+
 export async function listDirectory(input: {
   context: ProjectContext;
   path: string;
@@ -145,7 +158,7 @@ export async function listDirectory(input: {
       truncated = true;
       return;
     }
-    let children;
+    let children: Dirent[];
     try {
       children = await readdir(directory, { withFileTypes: true });
     } catch (error) {
@@ -153,35 +166,52 @@ export async function listDirectory(input: {
       return;
     }
     children.sort((left, right) => left.name.localeCompare(right.name, "en"));
-    for (const child of children) {
+    const candidates = children
+      .map((child) => ({ child, childPath: resolve(directory, child.name) }))
+      .filter(({ childPath }) => !isProtectedWorkstationPath(input.context, childPath));
+    const described = await mapInBatches(candidates, 32, async ({ child, childPath }) => {
+      try {
+        const info = await lstat(childPath);
+        const canonicalPath = info.isSymbolicLink()
+          ? await realpath(childPath).catch(() => childPath)
+          : childPath;
+        return {
+          child,
+          childPath,
+          info,
+          protected: isProtectedWorkstationPath(input.context, canonicalPath),
+          error: undefined,
+        };
+      } catch (error) {
+        return { child, childPath, info: undefined, protected: false, error };
+      }
+    });
+    for (const item of described) {
       if (entries.length >= input.maxEntries) {
         truncated = true;
         return;
       }
-      const childPath = resolve(directory, child.name);
-      let info;
-      try {
-        info = await lstat(childPath);
-      } catch (error) {
-        if (errors.length < 100) errors.push({ path: childPath, message: errorMessage(error) });
+      if (item.protected) continue;
+      if (!item.info) {
+        if (errors.length < 100) errors.push({ path: item.childPath, message: errorMessage(item.error) });
         continue;
       }
-      const kind: DirectoryEntryKind = info.isSymbolicLink()
+      const kind: DirectoryEntryKind = item.info.isSymbolicLink()
         ? "symlink"
-        : info.isDirectory()
+        : item.info.isDirectory()
           ? "directory"
-          : info.isFile()
+          : item.info.isFile()
             ? "file"
             : "other";
       entries.push({
-        path: childPath,
-        name: child.name,
+        path: item.childPath,
+        name: item.child.name,
         kind,
-        size: info.isFile() ? info.size : null,
-        modifiedAt: Number.isFinite(info.mtimeMs) ? info.mtime.toISOString() : null,
+        size: item.info.isFile() ? item.info.size : null,
+        modifiedAt: Number.isFinite(item.info.mtimeMs) ? item.info.mtime.toISOString() : null,
       });
       if (kind === "directory" && currentDepth < input.depth) {
-        await walk(childPath, currentDepth + 1);
+        await walk(item.childPath, currentDepth + 1);
       }
     }
   };
@@ -233,6 +263,7 @@ export async function searchFiles(input: {
     let overflow = false;
     for (const line of lines) {
       const absolutePath = resolve(cwd, line);
+      if (isProtectedWorkstationPath(input.context, absolutePath)) continue;
       if (!matchesQuery(absolutePath)) continue;
       if (matches.length >= input.maxResults) {
         overflow = true;
@@ -280,12 +311,14 @@ export async function searchFiles(input: {
       ? (submatches[0] as { start?: unknown }).start
       : 0;
     if (typeof pathText !== "string" || typeof lineText !== "string" || typeof lineNumber !== "number") continue;
+    const absolutePath = resolve(cwd, pathText);
+    if (isProtectedWorkstationPath(input.context, absolutePath)) continue;
     if (matches.length >= input.maxResults) {
       overflow = true;
       break;
     }
     matches.push({
-      path: resolve(cwd, pathText),
+      path: absolutePath,
       line: lineNumber,
       column: typeof firstStart === "number" ? firstStart + 1 : 1,
       text: lineText.replace(/[\r\n]+$/u, "").slice(0, 4096),
@@ -310,6 +343,24 @@ async function readTextBytes(path: string): Promise<{ bytes: Buffer; text: strin
   return { bytes, ...decoded, sha256: sha256(bytes) };
 }
 
+function selectTextLines(text: string, startLine: number, maxLines: number) {
+  const selected: string[] = [];
+  let lineNumber = 1;
+  let lineStart = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code !== 10 && code !== 13) continue;
+    if (lineNumber >= startLine && selected.length < maxLines) {
+      selected.push(text.slice(lineStart, index));
+    }
+    if (code === 13 && text.charCodeAt(index + 1) === 10) index += 1;
+    lineStart = index + 1;
+    lineNumber += 1;
+  }
+  if (lineNumber >= startLine && selected.length < maxLines) selected.push(text.slice(lineStart));
+  return { selected, totalLines: lineNumber };
+}
+
 export async function readTextFile(input: {
   context: ProjectContext;
   path: string;
@@ -318,10 +369,8 @@ export async function readTextFile(input: {
 }) {
   const path = await resolveAuthorizedWorkstationPath(input.context, input.path);
   const current = await readTextBytes(path);
-  const lines = current.text.split(/\r\n|\n|\r/u);
-  const startIndex = Math.min(input.startLine - 1, lines.length);
-  const selected = lines.slice(startIndex, startIndex + input.maxLines);
-  const endLine = selected.length === 0 ? input.startLine - 1 : startIndex + selected.length;
+  const { selected, totalLines } = selectTextLines(current.text, input.startLine, input.maxLines);
+  const endLine = selected.length === 0 ? input.startLine - 1 : input.startLine + selected.length - 1;
   return {
     path,
     text: selected.join("\n"),
@@ -329,8 +378,8 @@ export async function readTextFile(input: {
     byteLength: current.bytes.byteLength,
     startLine: input.startLine,
     endLine,
-    totalLines: lines.length,
-    truncated: startIndex > 0 || endLine < lines.length,
+    totalLines,
+    truncated: input.startLine > 1 || endLine < totalLines,
   };
 }
 

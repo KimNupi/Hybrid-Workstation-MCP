@@ -52,7 +52,7 @@ async function writeFixtureProfile(fixture: Fixture, profile: Record<string, unk
 }
 
 async function addFixtureProfile(
-  fixture: Fixture,
+  _fixture: Fixture,
   id: string,
   primaryRoot: string,
 ): Promise<FixtureRegistryEntry> {

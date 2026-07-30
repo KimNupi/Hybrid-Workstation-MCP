@@ -13,7 +13,7 @@ function payload(result) {
 const toolDirectory = fileURLToPath(new URL("..", import.meta.url));
 const entrypoint = fileURLToPath(new URL("../dist/stdio.js", import.meta.url));
 const profileId = process.argv[2] ?? "workstation";
-const client = new Client({ name: `${profileId}-window-smoke`, version: "1.3.0" });
+const client = new Client({ name: `${profileId}-window-smoke`, version: "1.4.0" });
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [entrypoint, "--profile", profileId],

@@ -9,6 +9,8 @@ Hybrid Workstation MCP does not vendor npm dependency source code in Git.
 | `zod` | 4.4.3 | MIT |
 | `typescript` | 7.0.2 | Apache-2.0 |
 | `vitest` | 4.1.10 | MIT |
+| `@vitest/coverage-v8` | 4.1.10 | MIT |
+| `@biomejs/biome` | 2.5.5 | MIT or Apache-2.0 |
 | `@types/node` | 24.13.3 | MIT |
 | OpenAI `tunnel-client` | 0.0.10 | Apache-2.0 |
 | .NET runtime components linked into `HybridWindowCapture.exe` | 10.0.x | MIT |

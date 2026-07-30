@@ -14,6 +14,10 @@ profile registry + profile SHA-256 + identity marker + permission preset
 filesystem / Git resume / explicitly granted window observation / PowerShell
 ```
 
+The public transport contract is deliberately stdio. `tunnel-client` owns the
+outbound HTTP/TLS connection, while this package exposes no Streamable HTTP
+server or local HTTP MCP entrypoint.
+
 The engine and generated runtime state are separate. The engine lives in this
 repository. The ignored `runtime/` directory holds the installed tunnel binary,
 registry, protected credential, window grants, downloads, and file leases. The
@@ -21,9 +25,18 @@ default profile root lives under the user's home and owns its policy, profile
 JSON, tunnel YAML, and operational logs.
 
 The registry supports multiple non-overlapping profile roots. Each profile hash
-is pinned. A selected profile cannot use direct filesystem or shell tools inside
-another registered profile's root. The permission preset registers eight
-inspection tools in `readonly` or all fourteen tools in `workstation`.
+is pinned. A selected profile cannot use direct filesystem, Git-resume, or shell
+tools inside another registered profile's root. Direct filesystem and Git tools
+also deny runtime credentials, secret filenames, private keys, browser profiles,
+and canonical links into those locations. Directory and search tools omit those
+entries. PowerShell deliberately keeps the broader current-Windows-user boundary.
+The permission preset registers eight inspection tools in `readonly` or all
+fourteen tools in `workstation`.
+
+`project_resume(path)` resolves the requested path through the same direct-tool
+boundary, discovers its Git root, validates that canonical root again, then runs
+only bounded read-only status, log, and diff-stat commands. This allows an
+unrelated worktree without allowing another registered profile.
 
 ## Window observation path
 
@@ -52,4 +65,13 @@ ChatGPT ui_window_capture(windowRef)
 The native helper is built from `native/window-capture/` during release creation
 and placed under `runtime-distribution/window-capture/win-x64/` with a checksum.
 The helper is self-contained; release users do not need a .NET installation.
-No capture path uses a full-desktop screenshot or model-selected crop.
+It also implements `shell-host`: the helper assigns itself to a kill-on-close
+Job Object, writes PID-bound containment evidence, starts PowerShell inside that
+job, and relays standard streams. If the verified helper is absent, the existing
+PowerShell `Add-Type` Job Object implementation is used. No capture path uses a
+full-desktop screenshot or model-selected crop.
+
+`scripts/generate-build-info.mjs` hashes package, TypeScript, and native inputs
+into a deterministic build revision and hashes the tool registration source into
+a separate schema revision. Both are returned by `workstation_context` alongside
+the fixed `stdio` transport identifier.

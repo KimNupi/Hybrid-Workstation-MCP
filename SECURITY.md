@@ -11,8 +11,20 @@ tool is intentionally powerful and is not an operating-system sandbox.
   local Administrators group.
 - The key is removed from the MCP server process environment before project or
   shell code is loaded.
+- Direct filesystem and Git-resume tools deny the engine `runtime/` tree,
+  configured grant stores and tunnel YAML, `.env` secrets, common credential
+  files and private-key extensions, SSH/cloud credential roots, Chromium user
+  profiles, and Windows credential stores. Safe templates such as
+  `.env.example` remain readable.
+- Both requested and canonical paths are checked. Protected entries are omitted
+  from directory and search results, including links that resolve into a
+  protected tree.
 - Never upload `runtime/`, a generated tunnel YAML, grants, logs, or support
   bundles.
+
+These restrictions apply to the direct MCP file and Git tools. They do not turn
+PowerShell into a sandbox: `shell_start` remains an intentional current-user
+escape hatch and can read, modify, or delete anything the Windows account can.
 
 ## Permission presets
 
@@ -46,11 +58,13 @@ and UAC remain the actual machine boundary.
 - Captures target only that application window. There is no desktop-wide
   screenshot followed by model-directed cropping.
 - Windows Graphics Capture is preferred for GPU-rendered windows. The bundled
-  native helper is verified against its shipped SHA-256 before execution.
-  Target-only `PrintWindow` is a compatibility fallback.
+  native helper is verified against its shipped SHA-256 before execution. The
+  same NativeAOT helper hosts PowerShell inside a kill-on-close Job Object;
+  installations without it retain the existing in-process PowerShell Job Object
+  fallback. Target-only `PrintWindow` is a compatibility fallback.
 - Minimized windows are rejected. Protected, elevated, secure-desktop, or
   application-restricted windows may fail to list or capture.
-- Version 1.3 provides observation only: no mouse clicks, arbitrary keystrokes,
+- Version 1.4 provides observation only: no mouse clicks, arbitrary keystrokes,
   text input, drag operations, authentication interaction, or secure-desktop
   control.
 
@@ -73,4 +87,4 @@ commands, permission changes, external submissions, or other side effects.
 
 Use the repository's **Security** tab to report a vulnerability privately. Do
 not report tunnel runtime keys, window grants, captures, or private logs in a
-public issue. Version 1.3 is the currently supported release.
+public issue. Version 1.4 is the currently supported release.

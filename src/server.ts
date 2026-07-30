@@ -60,15 +60,15 @@ function serverInstructions(context: ProjectContext): string {
     `Permission preset: ${context.profile.permissionPreset}.`,
     `Start from ${context.defaultWorkingDirectory}.`,
     context.profile.permissionPreset === "readonly"
-      ? "The exposed filesystem tools run as the current Windows user and can reach unrelated workstation paths, except roots assigned to another registered profile. File mutation and PowerShell tools are not registered."
-      : "The exposed filesystem and PowerShell tools run as the current Windows user and can reach unrelated workstation paths, except roots assigned to another registered profile.",
+      ? "The direct filesystem tools can reach unrelated workstation paths, but deny known credentials, runtime state, private keys, browser profiles, and roots assigned to another registered profile. File mutation and PowerShell tools are not registered."
+      : "Direct filesystem and Git tools can reach unrelated workstation paths, but deny known credentials, runtime state, private keys, browser profiles, and roots assigned to another registered profile. PowerShell remains a current-Windows-user escape hatch outside that direct-file secret filter.",
     context.profile.permissionPreset === "readonly"
       ? `Call workstation_context and review every bootstrapEntries item before relying on profile guidance: ${bootstrap}.`
       : `Before the first mutation or shell command, call workstation_context and review every bootstrapEntries item: ${bootstrap}.`,
     context.profile.permissionPreset === "readonly"
       ? "This profile is deliberately locked to inspection only."
       : "Pass the returned contextRevision to write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
-    "When continuing existing work, call project_resume after workstation_context and inspect only task-relevant changed files.",
+    "When continuing existing work, call project_resume after workstation_context. Pass path for an unrelated Git worktree and inspect only task-relevant changed files.",
     context.profile.permissionPreset === "workstation"
       ? "Use direct read and search tools for bounded inspection. When the user asks to change, build, test, or run something, use the available mutation and shell tools directly without asking for a separate mode change."
       : "Use direct read and search tools for bounded inspection.",
@@ -119,7 +119,7 @@ const shellStatusOutputSchema = {
 export function createServer(context: ProjectContext): McpServer {
   const projectName = context.profile.displayName;
   const server = new McpServer(
-    { name: context.profile.serverName, version: "1.3.0" },
+    { name: context.profile.serverName, version: "1.4.0" },
     { instructions: serverInstructions(context) },
   );
   const canWrite = context.profile.permissionPreset === "workstation";
@@ -151,6 +151,9 @@ export function createServer(context: ProjectContext): McpServer {
         })),
         platform: z.string(),
         accessBoundary: z.literal("current_windows_user"),
+        transport: z.literal("stdio"),
+        buildRevision: SHA256_SCHEMA,
+        toolSchemaRevision: SHA256_SCHEMA,
       },
       annotations: localReadAnnotations,
     },
@@ -161,8 +164,9 @@ export function createServer(context: ProjectContext): McpServer {
     "project_resume",
     {
       title: `${projectName} project resume snapshot`,
-      description: "Read a bounded Git branch, status, recent-commit, diff-stat, and resume-document snapshot without modifying the repository.",
+      description: "Read a bounded Git branch, status, recent-commit, diff-stat, and resume-document snapshot from the requested path. Unrelated worktrees are allowed; protected locations and other registered profiles are denied.",
       inputSchema: {
+        path: PATH_SCHEMA.default("."),
         recentCommitLimit: z.number().int().min(1).max(20).default(8),
         maxChangedPaths: z.number().int().min(1).max(1000).default(200),
       },
@@ -205,8 +209,8 @@ export function createServer(context: ProjectContext): McpServer {
       },
       annotations: localReadAnnotations,
     },
-    async ({ recentCommitLimit, maxChangedPaths }) => responseFor(
-      await getProjectResume(context, recentCommitLimit, maxChangedPaths),
+    async ({ path, recentCommitLimit, maxChangedPaths }) => responseFor(
+      await getProjectResume(context, recentCommitLimit, maxChangedPaths, path),
     ),
   );
 
@@ -214,7 +218,7 @@ export function createServer(context: ProjectContext): McpServer {
     "list_directory",
     {
       title: "List a workstation directory",
-      description: "List a bounded directory tree. Absolute paths are allowed; relative paths start at the profile default directory.",
+      description: "List a bounded directory tree while omitting protected credential, runtime, private-key, and browser-profile entries. Absolute paths are allowed; relative paths start at the profile default directory.",
       inputSchema: {
         path: PATH_SCHEMA.default("."),
         depth: z.number().int().min(1).max(20).default(1),
@@ -241,7 +245,7 @@ export function createServer(context: ProjectContext): McpServer {
     "search_files",
     {
       title: "Search workstation files",
-      description: "Search paths or file content with ripgrep without modifying files.",
+      description: "Search paths or file content with ripgrep without modifying files or returning protected credential and runtime paths.",
       inputSchema: {
         path: PATH_SCHEMA.default("."),
         query: z.string().min(1).max(4096),
@@ -274,7 +278,7 @@ export function createServer(context: ProjectContext): McpServer {
     "read_text_file",
     {
       title: "Read a workstation text file",
-      description: "Read strict UTF-8 text with its SHA-256. Large files can be paged by line.",
+      description: "Read non-protected strict UTF-8 text with its SHA-256. Large files can be paged by line.",
       inputSchema: {
         path: PATH_SCHEMA,
         startLine: z.number().int().min(1).max(100_000_000).default(1),
@@ -299,7 +303,7 @@ export function createServer(context: ProjectContext): McpServer {
     "read_image",
     {
       title: "Inspect a workstation image",
-      description: "Read a PNG, JPEG, GIF, or WebP file as an MCP image block plus hash and size metadata.",
+      description: "Read a non-protected PNG, JPEG, GIF, or WebP file as an MCP image block plus hash and size metadata.",
       inputSchema: { path: PATH_SCHEMA },
       outputSchema: {
         path: z.string(),
@@ -388,7 +392,7 @@ export function createServer(context: ProjectContext): McpServer {
     "write_text_file",
     {
       title: "Write a workstation text file",
-      description: "Create or atomically replace one UTF-8 text file after workstation_context. Creation requires expectedSha256='absent'; replacement requires the exact current hash.",
+      description: "Create or atomically replace one non-protected UTF-8 text file after workstation_context. Creation requires expectedSha256='absent'; replacement requires the exact current hash.",
       inputSchema: {
         contextRevision: CONTEXT_REVISION_SCHEMA,
         path: PATH_SCHEMA,

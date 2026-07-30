@@ -110,7 +110,7 @@ if (-not $NoDesktopShortcut) {
   if ($Desktop -and (Test-Path -LiteralPath $Desktop -PathType Container)) {
     $Shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $Desktop "Hybrid MCP Control.lnk"))
     $Shortcut.TargetPath = (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe")
-    $Shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $ToolRoot 'scripts\Control.ps1')`""
+    $Shortcut.Arguments = "-NoProfile -NonInteractive -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$(Join-Path $ToolRoot 'scripts\ControlCenter.ps1')`""
     $Shortcut.WorkingDirectory = $ToolRoot
     $Shortcut.Save()
   }
@@ -119,4 +119,4 @@ if (-not $NoDesktopShortcut) {
 Write-Output "Hybrid Workstation MCP core installed."
 Write-Output "Profile root: $WorkspaceRoot"
 Write-Output "Permission preset: $PermissionPreset"
-Write-Output "Next: run 'Configure Tunnel.cmd' and enter your own tunnel_id and runtime API key."
+Write-Output "Next: run 'Configure Tunnel.cmd', then open 'Hybrid MCP Control.cmd'."

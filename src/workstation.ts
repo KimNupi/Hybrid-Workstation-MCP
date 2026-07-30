@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
+import { BUILD_INFO } from "./build-info.generated.js";
 import type { ProjectContext } from "./profile.js";
 
 export const PERMISSION_CAPABILITIES = Object.freeze({
@@ -10,6 +11,19 @@ export const PERMISSION_CAPABILITIES = Object.freeze({
 export type WorkstationPathScope = "exact" | "tree";
 const MAX_BOOTSTRAP_FILE_BYTES = 128 * 1024;
 const MAX_BOOTSTRAP_TOTAL_BYTES = 256 * 1024;
+const SAFE_ENV_TEMPLATE_PATTERN = /^\.env\.(?:example|sample|template|dist)$/iu;
+const PROTECTED_SECRET_BASENAMES = new Set([
+  ".git-credentials",
+  ".npmrc",
+  ".pypirc",
+  "client_secret.json",
+  "credentials.json",
+  "cookies",
+  "cookies.sqlite",
+  "login data",
+  "web data",
+]);
+const PROTECTED_SECRET_EXTENSIONS = [".key", ".p12", ".pem", ".pfx"] as const;
 
 export interface BootstrapEntry {
   readonly relativePath: string;
@@ -26,6 +40,61 @@ function normalizeForComparison(path: string): string {
 function isWithinOrEqual(root: string, candidate: string): boolean {
   const fromRoot = relative(normalizeForComparison(root), normalizeForComparison(candidate));
   return fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot));
+}
+
+function knownProtectedPaths(context: ProjectContext): readonly string[] {
+  const userProfile = process.env.USERPROFILE ?? process.env.HOME;
+  const localAppData = process.env.LOCALAPPDATA
+    ?? (userProfile ? resolve(userProfile, "AppData", "Local") : undefined);
+  const roamingAppData = process.env.APPDATA
+    ?? (userProfile ? resolve(userProfile, "AppData", "Roaming") : undefined);
+  const configuredGrants = process.env.CHATGPT_HYBRID_UI_GRANTS_PATH;
+  const paths = [
+    resolve(context.engineRoot, "runtime"),
+    ...context.managedProjectRoots.map((managed) => (
+      resolve(managed.primaryRoot, "tools", "chatgpt-hybrid-mcp", "tunnel.local.yaml")
+    )),
+  ];
+  if (configuredGrants && isAbsolute(configuredGrants)) paths.push(resolve(configuredGrants));
+  if (userProfile) {
+    paths.push(
+      resolve(userProfile, ".ssh"),
+      resolve(userProfile, ".aws"),
+      resolve(userProfile, ".config", "gcloud"),
+    );
+  }
+  if (localAppData) {
+    paths.push(
+      resolve(localAppData, "Google", "Chrome", "User Data"),
+      resolve(localAppData, "Microsoft", "Edge", "User Data"),
+      resolve(localAppData, "Microsoft", "Credentials"),
+    );
+  }
+  if (roamingAppData) paths.push(resolve(roamingAppData, "Microsoft", "Credentials"));
+  return paths;
+}
+
+function hasProtectedSecretName(path: string): boolean {
+  const name = basename(path).toLocaleLowerCase("en-US");
+  if (name === ".env" || (name.startsWith(".env.") && !SAFE_ENV_TEMPLATE_PATTERN.test(name))) return true;
+  if (PROTECTED_SECRET_BASENAMES.has(name)) return true;
+  return PROTECTED_SECRET_EXTENSIONS.some((extension) => name.endsWith(extension));
+}
+
+export function isProtectedWorkstationPath(context: ProjectContext, candidate: string): boolean {
+  const absolute = resolve(candidate);
+  if (hasProtectedSecretName(absolute)) return true;
+  return knownProtectedPaths(context).some((protectedPath) => isWithinOrEqual(protectedPath, absolute));
+}
+
+function assertProtectedPathBoundary(context: ProjectContext, candidate: string): void {
+  const absolute = resolve(candidate);
+  if (hasProtectedSecretName(absolute)) {
+    throw new Error(`Protected credential or secret path denied: ${absolute}`);
+  }
+  if (knownProtectedPaths(context).some((protectedPath) => isWithinOrEqual(protectedPath, absolute))) {
+    throw new Error(`Protected credential, runtime, or browser-profile path denied: ${absolute}`);
+  }
 }
 
 function sha256(bytes: Buffer | string): string {
@@ -157,6 +226,20 @@ export async function resolveAuthorizedWorkstationPath(
 ): Promise<string> {
   const requestedPath = resolveWorkstationPath(context, rawPath);
   assertManagedProjectBoundary(context, requestedPath, scope);
+  assertProtectedPathBoundary(context, requestedPath);
+  const canonicalPath = await canonicalizeExistingAncestor(requestedPath);
+  assertManagedProjectBoundary(context, canonicalPath, scope);
+  assertProtectedPathBoundary(context, canonicalPath);
+  return requestedPath;
+}
+
+export async function resolveAuthorizedShellPath(
+  context: ProjectContext,
+  rawPath = ".",
+  scope: WorkstationPathScope = "exact",
+): Promise<string> {
+  const requestedPath = resolveWorkstationPath(context, rawPath);
+  assertManagedProjectBoundary(context, requestedPath, scope);
   const canonicalPath = await canonicalizeExistingAncestor(requestedPath);
   assertManagedProjectBoundary(context, canonicalPath, scope);
   return requestedPath;
@@ -177,5 +260,8 @@ export async function getWorkstationContext(context: ProjectContext) {
     ...bootstrap,
     platform: `${process.platform}-${process.arch}`,
     accessBoundary: "current_windows_user",
+    transport: "stdio",
+    buildRevision: BUILD_INFO.buildRevision,
+    toolSchemaRevision: BUILD_INFO.toolSchemaRevision,
   } as const;
 }
