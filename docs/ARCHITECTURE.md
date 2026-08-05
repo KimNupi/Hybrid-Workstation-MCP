@@ -31,7 +31,10 @@ also deny runtime credentials, secret filenames, private keys, browser profiles,
 and canonical links into those locations. Directory and search tools omit those
 entries. PowerShell deliberately keeps the broader current-Windows-user boundary.
 The permission preset registers eight inspection tools in `readonly` or all
-fourteen tools in `workstation`.
+fourteen tools in `workstation`. Arbitrary PowerShell starts use a shared
+workspace lease keyed by the nearest Git root, the containing registered project
+root, or the exact working directory. This serializes conflicting shell work
+across profile processes without blocking unrelated workspaces or direct reads.
 
 The Control Center reads registered profile status with bounded concurrency. A
 single profile uses a direct fast path without a runspace pool; multiple-profile
