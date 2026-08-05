@@ -174,13 +174,21 @@ describe("workstation shell", { timeout: 30_000 }, () => {
     await expect(access(join(primary, "artifacts", "chatgpt-hybrid-mcp", "shell"))).rejects.toThrow();
   });
 
-  it("serializes same-profile shell jobs without blocking another project profile", async () => {
+  it("serializes shell jobs per Git workspace across profiles while allowing another workspace", async () => {
     const { context, outside } = await fixture();
-    const marker = join(outside, "writer-started.txt");
+    const workspace = join(outside, "git-workspace");
+    const firstCwd = join(workspace, "packages", "first");
+    const secondCwd = join(workspace, "packages", "second");
+    const marker = join(workspace, "writer-started.txt");
+    await Promise.all([
+      mkdir(join(workspace, ".git"), { recursive: true }),
+      mkdir(firstCwd, { recursive: true }),
+      mkdir(secondCwd, { recursive: true }),
+    ]);
     const escapedMarker = marker.replaceAll("'", "''");
     const first = await startShellJob({
       context,
-      cwd: outside,
+      cwd: firstCwd,
       command: `Set-Content -LiteralPath '${escapedMarker}' -Value 'started'\nStart-Sleep -Seconds 30`,
       timeoutMs: 60_000,
     });
@@ -201,43 +209,102 @@ describe("workstation shell", { timeout: 30_000 }, () => {
       firstEvidence = getShellStatus(context, first.id);
     }
     expect(firstEvidence.leaseAcquired).toBe(true);
+    expect(firstEvidence.leaseScope).toMatch(/^workspace:[a-f0-9]{64}:shell$/u);
     expect(firstEvidence.containmentKind).toBe("windows_job_object_kill_on_close");
     expect(firstEvidence.containmentEnforced).toBe(true);
     expect(firstEvidence.processId).toEqual(expect.any(Number));
 
     const blocked = await startShellJob({
       context,
-      cwd: outside,
+      cwd: secondCwd,
       command: "Write-Output 'must-not-run'",
       timeoutMs: 10_000,
     });
     const blockedStatus = await waitForTerminal(context, blocked.id);
     expect(blockedStatus.status).toBe("failed");
     expect(blockedStatus.exitCode).toBe(75);
+    expect(blockedStatus.leaseScope).toBe(firstEvidence.leaseScope);
     const blockedOutput = await getShellOutput({ context, id: blocked.id, stdoutOffset: 0, stderrOffset: 0, maxCharacters: 20_000 });
-    expect(blockedOutput.stderr.text).toContain("PROFILE_SHELL_LEASE_BUSY");
+    expect(blockedOutput.stderr.text).toContain("WORKSPACE_SHELL_LEASE_BUSY");
     expect(blockedOutput.stderr.text).toContain(first.id);
     expect(blockedOutput.stderr.text).toContain(String(firstEvidence.processId));
     expect(blockedOutput.stdout.text).not.toContain("must-not-run");
 
     const otherProfile = await fixture();
-    const other = await startShellJob({
-      context: otherProfile.context,
-      cwd: otherProfile.outside,
-      command: "Write-Output 'other-profile-ran'",
+    const sharedEngineContext = Object.freeze({
+      ...otherProfile.context,
+      engineRoot: context.engineRoot,
+    }) as ProjectContext;
+    const crossProfileBlocked = await startShellJob({
+      context: sharedEngineContext,
+      cwd: secondCwd,
+      command: "Write-Output 'cross-profile-must-not-run'",
       timeoutMs: 10_000,
     });
-    expect((await waitForTerminal(otherProfile.context, other.id)).status).toBe("completed");
+    const crossProfileStatus = await waitForTerminal(sharedEngineContext, crossProfileBlocked.id);
+    expect(crossProfileStatus.status).toBe("failed");
+    expect(crossProfileStatus.exitCode).toBe(75);
+    expect(crossProfileStatus.leaseScope).toBe(firstEvidence.leaseScope);
+    const crossProfileOutput = await getShellOutput({
+      context: sharedEngineContext,
+      id: crossProfileBlocked.id,
+      stdoutOffset: 0,
+      stderrOffset: 0,
+      maxCharacters: 20_000,
+    });
+    expect(crossProfileOutput.stderr.text).toContain("WORKSPACE_SHELL_LEASE_BUSY");
+    expect(crossProfileOutput.stdout.text).not.toContain("cross-profile-must-not-run");
+
+    const other = await startShellJob({
+      context: sharedEngineContext,
+      cwd: otherProfile.outside,
+      command: "Write-Output 'other-workspace-ran'",
+      timeoutMs: 10_000,
+    });
+    expect((await waitForTerminal(sharedEngineContext, other.id)).status).toBe("completed");
 
     cancelShellJob(context, first.id);
     await waitForTerminal(context, first.id);
     const afterRelease = await startShellJob({
       context,
-      cwd: outside,
+      cwd: secondCwd,
       command: "Write-Output 'writer-after-release'",
       timeoutMs: 10_000,
     });
     expect((await waitForTerminal(context, afterRelease.id)).status).toBe("completed");
+  }, 30_000);
+
+  it("uses the registered project root when no Git marker exists", async () => {
+    const { context, primary } = await fixture();
+    const firstCwd = join(primary, "one");
+    const secondCwd = join(primary, "two");
+    const marker = join(primary, "project-writer-started.txt");
+    await Promise.all([mkdir(firstCwd), mkdir(secondCwd)]);
+    const first = await startShellJob({
+      context,
+      cwd: firstCwd,
+      command: `Set-Content -LiteralPath '${marker.replaceAll("'", "''")}' -Value 'started'\nStart-Sleep -Seconds 30`,
+      timeoutMs: 60_000,
+    });
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
+      try {
+        await access(marker);
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      }
+    }
+    await expect(access(marker)).resolves.toBeUndefined();
+    const blocked = await startShellJob({
+      context,
+      cwd: secondCwd,
+      command: "Write-Output 'must-not-run'",
+      timeoutMs: 10_000,
+    });
+    expect((await waitForTerminal(context, blocked.id)).exitCode).toBe(75);
+    cancelShellJob(context, first.id);
+    await waitForTerminal(context, first.id);
   }, 30_000);
 
   it("kills a detached descendant when the owning shell exits", async () => {

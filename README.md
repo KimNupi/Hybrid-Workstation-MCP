@@ -146,6 +146,10 @@ restarts an active tunnel when changing the lock. Most users should leave it on
   cannot race the user's request.
 - Active connection-owned PowerShell jobs are cancelled when that exact MCP
   connection closes. Completed evidence remains inspectable after reconnect.
+- Arbitrary PowerShell jobs are serialized only within the same detected
+  workspace across profiles. The nearest Git root is preferred, followed by the
+  registered project root and then the exact working directory. Unrelated
+  workspaces and direct read/search tools remain concurrent.
 - Commands are never replayed automatically.
 - `workstation_context` reports `transport: "stdio"`, `buildRevision`, and
   `toolSchemaRevision` so a running build and tool contract can be identified.

@@ -13,6 +13,7 @@ $ProfileDirectory = Join-Path $ProjectRoot "tools\chatgpt-hybrid-mcp"
 $ProfilePath = Join-Path $ProfileDirectory "profile.json"
 $RegistryPath = Join-Path $RuntimeRoot "profile_registry.json"
 $Utf8 = [Text.UTF8Encoding]::new($false)
+$PreviousRegistryPath = [Environment]::GetEnvironmentVariable("CHATGPT_HYBRID_PROFILE_REGISTRY", "Process")
 
 try {
   New-Item -ItemType Directory -Path $ScriptRoot, $RuntimeRoot, $ProfileDirectory, (Join-Path $ProjectRoot ".git") -Force | Out-Null
@@ -37,6 +38,7 @@ try {
     profiles = @([ordered]@{ id = "preset-test"; profilePath = $ProfilePath; profileSha256 = $Hash })
   }
   [IO.File]::WriteAllText($RegistryPath, ($Registry | ConvertTo-Json -Depth 10) + [Environment]::NewLine, $Utf8)
+  [Environment]::SetEnvironmentVariable("CHATGPT_HYBRID_PROFILE_REGISTRY", $RegistryPath, "Process")
 
   $SetScript = Join-Path $ScriptRoot "Set-Permission-Preset.ps1"
   & $SetScript -ProfileId "preset-test" -PermissionPreset "readonly" | Out-Null
@@ -54,5 +56,6 @@ try {
 
   Write-Output "Permission preset update test passed."
 } finally {
+  [Environment]::SetEnvironmentVariable("CHATGPT_HYBRID_PROFILE_REGISTRY", $PreviousRegistryPath, "Process")
   if (Test-Path -LiteralPath $TempRoot) { Remove-Item -LiteralPath $TempRoot -Recurse -Force }
 }

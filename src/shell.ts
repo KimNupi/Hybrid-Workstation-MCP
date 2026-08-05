@@ -29,7 +29,7 @@ const JOB_ID_PATTERN = /^shell_[a-f0-9]{32}$/u;
 const MAX_ACTIVE_JOBS_PER_PROFILE = 8;
 const MAX_LOG_BYTES_PER_STREAM = 16 * 1024 * 1024;
 const MAX_STATUS_MANIFEST_BYTES = 64 * 1024;
-const PROFILE_SHELL_BUSY_EXIT_CODE = 75;
+const WORKSPACE_SHELL_BUSY_EXIT_CODE = 75;
 const WINDOWS_JOB_OBJECT_CSHARP = `
 using System;
 using System.ComponentModel;
@@ -136,7 +136,8 @@ const POWERSHELL_STDIN_WRAPPER = [
   "$jobObjectHandle = [IntPtr]::Zero",
   "$shellJobId = $env:CHATGPT_HYBRID_SHELL_JOB_ID",
   "$profileId = $env:CHATGPT_HYBRID_PROFILE_ID",
-  "$ownerPath = $env:CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH",
+  "$leaseScope = $env:CHATGPT_HYBRID_SHELL_LEASE_SCOPE",
+  "$ownerPath = $env:CHATGPT_HYBRID_WORKSPACE_SHELL_OWNER_PATH",
   "$ownerEvidencePath = $env:CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH",
   "$containmentEvidencePath = $env:CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH",
   "$nativeContainment = $env:CHATGPT_HYBRID_NATIVE_CONTAINMENT -eq '1'",
@@ -144,17 +145,17 @@ const POWERSHELL_STDIN_WRAPPER = [
   "$ownerProcessId = if ($ownerProcessIdText -match '^[1-9][0-9]*$') { [int]$ownerProcessIdText } else { $PID }",
   "try {",
   "if (-not $nativeContainment) { Add-Type -TypeDefinition $env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP -Language CSharp -ErrorAction Stop; $jobObjectHandle = [HybridWorkstationMcpJobObject]::AssignCurrentProcess(); $containment = [ordered]@{ version = 1; kind = 'windows_job_object_kill_on_close'; enforced = $true; jobId = $shellJobId; processId = $ownerProcessId; createdAt = [DateTime]::UtcNow.ToString('o') }; [IO.File]::WriteAllText($containmentEvidencePath, (($containment | ConvertTo-Json -Compress) + [Environment]::NewLine), $utf8) }",
-  "$leaseMutex = [Threading.Mutex]::new($false, $env:CHATGPT_HYBRID_PROFILE_SHELL_MUTEX)",
+  "$leaseMutex = [Threading.Mutex]::new($false, $env:CHATGPT_HYBRID_WORKSPACE_SHELL_MUTEX)",
   "try { $leaseAcquired = $leaseMutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $leaseAcquired = $true }",
-  `if (-not $leaseAcquired) { $ownerEvidence = ''; for ($ownerAttempt = 0; $ownerAttempt -lt 5 -and -not $ownerEvidence; $ownerAttempt++) { try { if ([IO.File]::Exists($ownerPath)) { $ownerEvidence = [IO.File]::ReadAllText($ownerPath, $utf8).Trim() } } catch {}; if (-not $ownerEvidence -and $ownerAttempt -lt 4) { Start-Sleep -Milliseconds 50 } }; $busyMessage = 'PROFILE_SHELL_LEASE_BUSY: another ChatGPT workstation shell job owns this profile shell lease.'; if ($ownerEvidence) { $busyMessage += ' owner=' + $ownerEvidence } else { $busyMessage += ' owner=initializing_or_unavailable' }; [Console]::Error.WriteLine($busyMessage); $scriptExitCode = ${PROFILE_SHELL_BUSY_EXIT_CODE} }`,
+  `if (-not $leaseAcquired) { $ownerEvidence = ''; for ($ownerAttempt = 0; $ownerAttempt -lt 5 -and -not $ownerEvidence; $ownerAttempt++) { try { if ([IO.File]::Exists($ownerPath)) { $ownerEvidence = [IO.File]::ReadAllText($ownerPath, $utf8).Trim() } } catch {}; if (-not $ownerEvidence -and $ownerAttempt -lt 4) { Start-Sleep -Milliseconds 50 } }; $busyMessage = 'WORKSPACE_SHELL_LEASE_BUSY: another ChatGPT workstation shell job owns this workspace shell lease.'; if ($ownerEvidence) { $busyMessage += ' owner=' + $ownerEvidence } else { $busyMessage += ' owner=initializing_or_unavailable' }; [Console]::Error.WriteLine($busyMessage); $scriptExitCode = ${WORKSPACE_SHELL_BUSY_EXIT_CODE} }`,
   "if ($null -eq $scriptExitCode) {",
-  "$owner = [ordered]@{ version = 1; profileId = $profileId; jobId = $shellJobId; processId = $ownerProcessId; createdAt = [DateTime]::UtcNow.ToString('o'); cwd = (Get-Location).Path; leaseScope = ('profile:' + $profileId + ':shell'); containment = 'windows_job_object_kill_on_close' }",
+  "$owner = [ordered]@{ version = 1; profileId = $profileId; jobId = $shellJobId; processId = $ownerProcessId; createdAt = [DateTime]::UtcNow.ToString('o'); cwd = (Get-Location).Path; leaseScope = $leaseScope; containment = 'windows_job_object_kill_on_close' }",
   "$ownerJson = ($owner | ConvertTo-Json -Compress) + [Environment]::NewLine",
   "[IO.File]::WriteAllText($ownerEvidencePath, $ownerJson, $utf8)",
   "$ownerTempPath = $ownerPath + '.' + $shellJobId + '.tmp'",
   "[IO.File]::WriteAllText($ownerTempPath, $ownerJson, $utf8)",
   "Move-Item -LiteralPath $ownerTempPath -Destination $ownerPath -Force",
-  "Remove-Item Env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP, Env:CHATGPT_HYBRID_NATIVE_CONTAINMENT, Env:CHATGPT_HYBRID_SHELL_OWNER_PROCESS_ID, Env:CHATGPT_HYBRID_PROFILE_ID, Env:CHATGPT_HYBRID_SHELL_JOB_ID, Env:CHATGPT_HYBRID_PROFILE_SHELL_MUTEX, Env:CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH, Env:CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH, Env:CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH -ErrorAction SilentlyContinue",
+  "Remove-Item Env:CHATGPT_HYBRID_JOB_OBJECT_CSHARP, Env:CHATGPT_HYBRID_NATIVE_CONTAINMENT, Env:CHATGPT_HYBRID_SHELL_OWNER_PROCESS_ID, Env:CHATGPT_HYBRID_PROFILE_ID, Env:CHATGPT_HYBRID_SHELL_JOB_ID, Env:CHATGPT_HYBRID_WORKSPACE_SHELL_MUTEX, Env:CHATGPT_HYBRID_WORKSPACE_SHELL_OWNER_PATH, Env:CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH, Env:CHATGPT_HYBRID_SHELL_LEASE_SCOPE, Env:CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH -ErrorAction SilentlyContinue",
   "$script = [Console]::In.ReadToEnd()",
   "& ([ScriptBlock]::Create($script))",
   "if ($null -ne $LASTEXITCODE) { $scriptExitCode = $LASTEXITCODE }",
@@ -268,6 +269,38 @@ function pathsFor(context: ProjectContext, id: string) {
 
 function normalizeForComparison(path: string): string {
   return process.platform === "win32" ? path.toLocaleLowerCase("en-US") : path;
+}
+
+function isWithinOrEqual(root: string, candidate: string): boolean {
+  const fromRoot = relative(normalizeForComparison(root), normalizeForComparison(candidate));
+  return fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot));
+}
+
+function workspaceLeaseIdentity(context: ProjectContext, cwd: string) {
+  const canonicalCwd = realpathSync(cwd);
+  let current = canonicalCwd;
+  while (true) {
+    try {
+      const marker = lstatSync(resolve(current, ".git"));
+      if (!marker.isSymbolicLink() && (marker.isDirectory() || marker.isFile())) break;
+    } catch {
+      // Continue toward the filesystem root when this directory is not a Git worktree root.
+    }
+    const parent = resolve(current, "..");
+    if (parent === current) {
+      const managed = context.managedProjectRoots.find((entry) => isWithinOrEqual(entry.primaryRoot, canonicalCwd));
+      current = managed ? realpathSync(managed.primaryRoot) : canonicalCwd;
+      break;
+    }
+    current = parent;
+  }
+  const normalizedRoot = normalizeForComparison(current);
+  const hash = createHash("sha256").update(normalizedRoot, "utf8").digest("hex");
+  return {
+    root: current,
+    hash,
+    leaseScope: `workspace:${hash}:shell`,
+  } as const;
 }
 
 function assertSafeArchivedJobRoot(context: ProjectContext, runtimeRoot: string, jobRoot: string): void {
@@ -562,9 +595,12 @@ async function startReservedShellJob(input: {
   if (!cwdInfo.isDirectory()) throw new Error(`Shell cwd is not a directory: ${cwd}`);
   const id = `shell_${randomBytes(16).toString("hex")}`;
   const paths = pathsFor(input.context, id);
+  const workspaceLease = workspaceLeaseIdentity(input.context, cwd);
+  const workspaceLeaseRoot = resolve(input.context.engineRoot, "runtime", "shell-leases", workspaceLease.hash);
   await mkdir(paths.runtimeRoot, { recursive: true });
   await mkdir(paths.jobRoot, { recursive: false });
-  const profileOwnerPath = resolve(paths.runtimeRoot, "profile-shell-owner.json");
+  await mkdir(workspaceLeaseRoot, { recursive: true });
+  const workspaceOwnerPath = resolve(workspaceLeaseRoot, "owner.json");
   await Promise.all([
     writeFile(paths.stdoutPath, Buffer.alloc(0), { flag: "wx" }),
     writeFile(paths.stderrPath, Buffer.alloc(0), { flag: "wx" }),
@@ -587,7 +623,7 @@ async function startReservedShellJob(input: {
     profileId: input.context.profile.id,
     status: "running",
     cwd,
-    leaseScope: `profile:${input.context.profile.id}:shell`,
+    leaseScope: workspaceLease.leaseScope,
     processId: null,
     leaseAcquired: false,
     containmentEnforced: false,
@@ -632,14 +668,15 @@ async function startReservedShellJob(input: {
     {
       cwd,
       env: makeWorkstationEnvironment({
-        CHATGPT_HYBRID_PROFILE_SHELL_MUTEX: `Local\\HybridWorkstationMcp-ProfileShell-${input.context.profile.id}`,
+        CHATGPT_HYBRID_WORKSPACE_SHELL_MUTEX: `Local\\HybridWorkstationMcp-WorkspaceShell-${workspaceLease.hash}`,
         ...(nativeHelper
           ? { CHATGPT_HYBRID_NATIVE_CONTAINMENT: "1" }
           : { CHATGPT_HYBRID_JOB_OBJECT_CSHARP: WINDOWS_JOB_OBJECT_CSHARP }),
         CHATGPT_HYBRID_PROFILE_ID: input.context.profile.id,
         CHATGPT_HYBRID_SHELL_JOB_ID: id,
-        CHATGPT_HYBRID_PROFILE_SHELL_OWNER_PATH: profileOwnerPath,
+        CHATGPT_HYBRID_WORKSPACE_SHELL_OWNER_PATH: workspaceOwnerPath,
         CHATGPT_HYBRID_SHELL_OWNER_EVIDENCE_PATH: paths.ownerEvidencePath,
+        CHATGPT_HYBRID_SHELL_LEASE_SCOPE: workspaceLease.leaseScope,
         CHATGPT_HYBRID_SHELL_CONTAINMENT_EVIDENCE_PATH: paths.containmentEvidencePath,
       }),
       windowsHide: true,
@@ -661,7 +698,7 @@ async function startReservedShellJob(input: {
     id,
     profileId: input.context.profile.id,
     cwd,
-    leaseScope: `profile:${input.context.profile.id}:shell`,
+    leaseScope: workspaceLease.leaseScope,
     createdAt,
     stdoutPath: paths.stdoutPath,
     stderrPath: paths.stderrPath,
