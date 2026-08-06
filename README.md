@@ -8,25 +8,28 @@ non-overlapping profiles.
 The package exposes bounded tools for bootstrap context, Git resume and change
 snapshots, directory and text search, text and image reads, explicitly granted
 application window observation, SHA-guarded single-file writes, atomic guarded
-multi-file patches, and asynchronous PowerShell jobs with status, output, and
+multi-file patches, managed Git worktrees, and asynchronous PowerShell jobs with status, output, and
 cancellation.
 
 ## Release status
 
-Version 1.5 adds `show_changes(path)` for bounded staged, unstaged, combined, and
-untracked Git review, plus `apply_patch` for coordinated text-only changes in an
-existing Git workspace. Patch application requires a current bootstrap revision
-and one exact SHA-256 or `absent` expectation per file, runs `git apply --check`,
-rejects protected paths, links, hardlinks, binary content, renames, copies, and
-unsupported file modes, and restores original files if application or
-verification fails. The dependency lock also resolves all currently reported
-moderate-or-higher npm advisories.
+Version 1.6 adds `git_worktree_create`, `git_worktree_list`, and
+`git_worktree_remove` for isolated branch work in the registered project. The
+branch name is the stable request identity: storage paths and worktree IDs are
+assigned automatically, repeated creation returns the same verified worktree,
+and a preserved branch can be reopened after removal. Normal clean removal is a
+single operation. The tool refuses dirty worktrees, branches already checked out
+elsewhere, unverified path collisions, and uncertain cleanup instead of risking
+local work.
 
-Version 1.4 introduced the hardened direct-filesystem boundary,
-`project_resume(path)`, checksum-pinned native shell hosting, deterministic
-build/tool-schema IDs, and the current validation gates.
+Version 1.5 introduced bounded Git change review with `show_changes(path)`,
+atomic SHA-guarded multi-file editing with `apply_patch`, and a dependency lock
+with no currently reported moderate-or-higher npm advisories. Version 1.4
+introduced the hardened direct-filesystem boundary, `project_resume(path)`,
+checksum-pinned native shell hosting, deterministic build/tool-schema IDs, and
+the current validation gates.
 
-Each public server process is now a sixteen-tool, single-profile stdio MCP. It
+Each public server process is now a nineteen-tool, single-profile stdio MCP. It
 does not add an HTTP MCP listener. The local manager can inspect registered
 profiles concurrently and start, stop, or restart up to three profiles at a
 time; already active or recovering profiles are skipped by **Connect all**.
@@ -129,10 +132,11 @@ window before capture.
 
 ## Permission presets
 
-- `workstation` (default): normal operation with all sixteen tools. ChatGPT can
-  inspect, review Git changes, observe granted windows, apply guarded single- or
-  multi-file edits, build, test, and run commands as the conversation naturally
-  progresses. A separate mode approval is not required for each task.
+- `workstation` (default): normal operation with all nineteen tools. ChatGPT can
+  inspect, review Git changes, create isolated branch worktrees, observe granted
+  windows, apply guarded single- or multi-file edits, build, test, and run
+  commands as the conversation naturally progresses. A separate mode approval
+  is not required for each task.
 - `readonly`: an optional deliberate lock exposing nine inspection, Git-review,
   and window-observation tools, with no file mutation or command execution.
 
@@ -161,6 +165,9 @@ restarts an active tunnel when changing the lock. Most users should leave it on
 - `project_resume` accepts an optional path and runs fixed read-only Git
   commands there. It permits unrelated worktrees but still rejects another
   registered profile and protected direct-file locations.
+- Managed worktree tools operate only on the current registered profile root.
+  Paths and IDs are deterministic, repeated creation is idempotent by branch,
+  clean removal preserves the branch, and dirty removal is refused.
 - Multi-profile lifecycle actions retain each profile's existing operation
   lock. Registry updates are serialized, preserve existing entries, reject
   duplicate ports and overlapping roots, and are committed with rollback.

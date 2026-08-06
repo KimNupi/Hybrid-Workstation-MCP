@@ -15,15 +15,36 @@ import { getProjectResume } from "./resume.js";
 import { cancelShellJob, getShellOutput, getShellStatus, startShellJob } from "./shell.js";
 import { captureGrantedWindow, listGrantedWindows } from "./ui-broker.js";
 import { assertCurrentContextRevision, getWorkstationContext } from "./workstation.js";
+import { createManagedWorktree, listManagedWorktrees, removeManagedWorktree } from "./worktree.js";
 
 const PATH_SCHEMA = z.string().min(1).max(32_768);
 const SHA256_SCHEMA = z.string().regex(/^[a-f0-9]{64}$/u);
+const GIT_OBJECT_ID_SCHEMA = z.string().regex(/^[a-f0-9]{40,64}$/u);
 const CONTEXT_REVISION_SCHEMA = SHA256_SCHEMA.describe(
   "Current contextRevision returned by workstation_context after reviewing every bootstrapEntries item.",
 );
 const SHELL_ID_SCHEMA = z.string().regex(/^shell_[a-f0-9]{32}$/u);
+const WORKTREE_ID_SCHEMA = z.string().regex(/^wt_[a-f0-9]{32}$/u);
 const nullableString = z.string().nullable();
 const nullableNumber = z.number().nullable();
+const managedWorktreeOutputSchema = {
+  worktreeId: WORKTREE_ID_SCHEMA,
+  profileId: z.string(),
+  repositoryRoot: z.string(),
+  path: z.string(),
+  branch: z.string(),
+  baseRef: z.string(),
+  baseSha: GIT_OBJECT_ID_SCHEMA,
+  head: GIT_OBJECT_ID_SCHEMA.nullable(),
+  present: z.boolean(),
+  registered: z.boolean(),
+  dirty: z.boolean(),
+  changes: z.array(z.string()),
+  locked: z.boolean(),
+  prunable: z.boolean(),
+  branchCreated: z.boolean(),
+  createdAt: z.string(),
+} as const;
 
 const localReadAnnotations = {
   readOnlyHint: true,
@@ -69,8 +90,8 @@ function serverInstructions(context: ProjectContext): string {
       : `Before the first mutation or shell command, call workstation_context and review every bootstrapEntries item: ${bootstrap}.`,
     context.profile.permissionPreset === "readonly"
       ? "This profile is deliberately locked to inspection only."
-      : "Pass the returned contextRevision to apply_patch, write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
-    "When continuing existing work, call project_resume after workstation_context. Pass path for an unrelated Git worktree and inspect only task-relevant changed files. Use show_changes after related edits for a bounded structured Git review.",
+      : "Pass the returned contextRevision to git_worktree_create, git_worktree_remove, apply_patch, write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
+    "When continuing existing work, call project_resume after workstation_context. Use managed Git worktrees for isolated branch work; their paths and identifiers are assigned automatically, and dirty worktrees are never removed. Use show_changes after related edits for a bounded structured Git review.",
     context.profile.permissionPreset === "workstation"
       ? "Use direct read and search tools for bounded inspection. When the user asks to change, build, test, or run something, use the available mutation and shell tools directly without asking for a separate mode change."
       : "Use direct read and search tools for bounded inspection.",
@@ -121,7 +142,7 @@ const shellStatusOutputSchema = {
 export function createServer(context: ProjectContext): McpServer {
   const projectName = context.profile.displayName;
   const server = new McpServer(
-    { name: context.profile.serverName, version: "1.5.0" },
+    { name: context.profile.serverName, version: "1.6.0" },
     { instructions: serverInstructions(context) },
   );
   const canWrite = context.profile.permissionPreset === "workstation";
@@ -430,6 +451,71 @@ export function createServer(context: ProjectContext): McpServer {
   );
 
   if (canWrite) {
+    server.registerTool(
+      "git_worktree_create",
+      {
+        title: "Create a managed Git worktree",
+        description: "Create or reopen an isolated worktree for one branch in the registered project. The path, stable worktree id, retry identity, and HEAD verification are managed automatically. Existing branches are reused when they are not checked out elsewhere.",
+        inputSchema: {
+          contextRevision: CONTEXT_REVISION_SCHEMA,
+          branch: z.string().min(1).max(255),
+          baseRef: z.string().min(1).max(255).default("HEAD"),
+        },
+        outputSchema: {
+          ...managedWorktreeOutputSchema,
+          recovered: z.boolean(),
+        },
+        annotations: localWriteAnnotations,
+      },
+      async ({ contextRevision, branch, baseRef }) => {
+        await assertCurrentContextRevision(context, contextRevision);
+        return responseFor(await createManagedWorktree({ context, branch, baseRef }));
+      },
+    );
+
+    server.registerTool(
+      "git_worktree_list",
+      {
+        title: "List managed Git worktrees",
+        description: "List verified managed worktrees for the registered project, including branch, HEAD, dirty state, and bounded status entries.",
+        inputSchema: {},
+        outputSchema: {
+          profileId: z.string(),
+          repositoryRoot: z.string(),
+          items: z.array(z.object(managedWorktreeOutputSchema)),
+        },
+        annotations: localReadAnnotations,
+      },
+      async () => responseFor(await listManagedWorktrees(context)),
+    );
+
+    server.registerTool(
+      "git_worktree_remove",
+      {
+        title: "Remove a managed Git worktree",
+        description: "Remove one clean managed worktree after internally rechecking its branch and HEAD. Dirty worktrees are refused, and the Git branch is always preserved.",
+        inputSchema: {
+          contextRevision: CONTEXT_REVISION_SCHEMA,
+          worktreeId: WORKTREE_ID_SCHEMA,
+        },
+        outputSchema: {
+          worktreeId: WORKTREE_ID_SCHEMA,
+          profileId: z.string(),
+          repositoryRoot: z.string(),
+          path: z.string(),
+          branch: z.string(),
+          head: GIT_OBJECT_ID_SCHEMA,
+          removed: z.literal(true),
+          branchPreserved: z.literal(true),
+        },
+        annotations: localWriteAnnotations,
+      },
+      async ({ contextRevision, worktreeId }) => {
+        await assertCurrentContextRevision(context, contextRevision);
+        return responseFor(await removeManagedWorktree({ context, worktreeId }));
+      },
+    );
+
     server.registerTool(
       "apply_patch",
       {

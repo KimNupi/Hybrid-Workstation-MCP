@@ -15,7 +15,14 @@ const readTools = [
   "ui_window_list",
   "workstation_context",
 ];
-const writeTools = ["apply_patch", "replace_text", "write_text_file"];
+const writeTools = [
+  "apply_patch",
+  "git_worktree_create",
+  "git_worktree_list",
+  "git_worktree_remove",
+  "replace_text",
+  "write_text_file",
+];
 const shellTools = ["shell_cancel", "shell_output", "shell_start", "shell_status"];
 
 function makeContext(permissionPreset: PermissionPreset): ProjectContext {
@@ -58,7 +65,7 @@ describe("permission presets", () => {
     await expect(listedTools("readonly")).resolves.toEqual([...readTools].sort());
   });
 
-  it("preserves the full sixteen-tool workstation mode", async () => {
+  it("preserves the full nineteen-tool workstation mode", async () => {
     await expect(listedTools("workstation")).resolves.toEqual([...readTools, ...writeTools, ...shellTools].sort());
   });
 });

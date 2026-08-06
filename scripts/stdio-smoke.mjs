@@ -1,4 +1,5 @@
 import { strict as assert } from "node:assert";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,6 +10,9 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const expectedTools = [
   "apply_patch",
+  "git_worktree_create",
+  "git_worktree_list",
+  "git_worktree_remove",
   "list_directory",
   "project_resume",
   "read_image",
@@ -25,6 +29,12 @@ const expectedTools = [
   "workstation_context",
   "write_text_file",
 ].sort();
+
+function runGit(cwd, args) {
+  const result = spawnSync("git.exe", args, { cwd, encoding: "utf8", windowsHide: true });
+  if (result.status !== 0) throw new Error(result.stderr || result.stdout || `git ${args.join(" ")} failed`);
+  return result.stdout.trim();
+}
 
 function payload(result) {
   assert.notEqual(result.isError, true, JSON.stringify(result.content));
@@ -96,8 +106,14 @@ await writeFile(registryPath, `${JSON.stringify({
     profileSha256: createHash("sha256").update(profileText).digest("hex"),
   }],
 }, null, 2)}\n`, "utf8");
+runGit(projectRoot, ["init", "-b", "main"]);
+runGit(projectRoot, ["config", "core.autocrlf", "false"]);
+runGit(projectRoot, ["config", "user.name", "Hybrid Workstation Stdio Smoke"]);
+runGit(projectRoot, ["config", "user.email", "stdio-smoke@example.invalid"]);
+runGit(projectRoot, ["add", "."]);
+runGit(projectRoot, ["commit", "-m", "fixture"]);
 
-const client = new Client({ name: "hermetic-stdio-smoke", version: "1.5.0" });
+const client = new Client({ name: "hermetic-stdio-smoke", version: "1.6.0" });
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [entrypoint, "--profile", profileId],
@@ -139,6 +155,30 @@ try {
   });
   assert.match(errorText(denied), /Protected credential/u);
 
+  const managed = payload(await client.callTool({
+    name: "git_worktree_create",
+    arguments: {
+      contextRevision: workstation.contextRevision,
+      branch: "smoke/managed-worktree",
+    },
+  }));
+  assert.match(managed.worktreeId, /^wt_[a-f0-9]{32}$/u);
+  assert.match(managed.head, /^[a-f0-9]{40,64}$/u);
+  assert.equal(managed.dirty, false);
+  const managedList = payload(await client.callTool({ name: "git_worktree_list", arguments: {} }));
+  assert.equal(managedList.items.length, 1);
+  assert.equal(managedList.items[0].worktreeId, managed.worktreeId);
+  const managedRemoval = payload(await client.callTool({
+    name: "git_worktree_remove",
+    arguments: {
+      contextRevision: workstation.contextRevision,
+      worktreeId: managed.worktreeId,
+    },
+  }));
+  assert.equal(managedRemoval.removed, true);
+  assert.equal(managedRemoval.branchPreserved, true);
+  assert.equal(runGit(projectRoot, ["show-ref", "--verify", "refs/heads/smoke/managed-worktree"]).length > 0, true);
+
   const shell = payload(await client.callTool({
     name: "shell_start",
     arguments: {
@@ -155,7 +195,7 @@ try {
   assert.match(output.stdout.text, /KEY_SCRUBBED/u);
   assert.doesNotMatch(output.stdout.text, /stdio-smoke-sentinel|KEY_LEAKED/u);
 
-  console.log("Hermetic Hybrid Workstation stdio smoke passed: 16 tools, build identity, protected files, and credential-scrubbed shell.");
+  console.log("Hermetic Hybrid Workstation stdio smoke passed: 19 tools, managed worktree lifecycle, build identity, protected files, and credential-scrubbed shell.");
 } finally {
   await client.close().catch(() => undefined);
   await rm(fixtureRoot, { recursive: true, force: true });

@@ -43,6 +43,23 @@ escape hatch and can read, modify, or delete anything the Windows account can.
   post-application verification failure triggers rollback; an incomplete
   rollback is reported explicitly as `PATCH_ROLLBACK_INCOMPLETE`.
 
+## Managed Git worktrees
+
+- `git_worktree_create` operates only on the current registered profile's exact
+  Git root. It derives a stable worktree ID from the repository and branch and
+  stores managed paths and records under the protected engine `runtime/` tree.
+- Repeating creation for an active managed branch returns its verified state.
+  If the branch was preserved by a prior removal and is not checked out
+  elsewhere, it is reopened instead of being recreated or overwritten.
+- Creation refuses branches checked out in another worktree, pre-existing
+  unverified storage paths, changed record identity, and incomplete prior
+  creation state. Cleanup uncertainty is reported as
+  `WORKTREE_CREATE_CLEANUP_UNCERTAIN`; an unverified remaining path is never
+  deleted automatically.
+- `git_worktree_remove` rechecks the managed path, Git registration, branch,
+  HEAD, and short status under a repository-scoped lease. It does not use
+  `--force`, refuses local changes, and always preserves the branch.
+
 ## Permission presets
 
 New installations default to `workstation`. Use `readonly` only when you
@@ -52,7 +69,7 @@ deliberately want to lock a connection to inspection:
   It prevents MCP file mutation and command execution, but readable files and
   captured pixels may still contain private information.
 - `workstation` is the normal mode. It adds text mutation and arbitrary
-  PowerShell execution as the current Windows user, allowing an uninterrupted
+  PowerShell execution and managed Git worktrees as the current Windows user, allowing an uninterrupted
   inspect → edit → build/test workflow.
 
 A permission preset is a tool-exposure boundary, not an OS sandbox. Windows ACLs
@@ -81,7 +98,7 @@ and UAC remain the actual machine boundary.
   fallback. Target-only `PrintWindow` is a compatibility fallback.
 - Minimized windows are rejected. Protected, elevated, secure-desktop, or
   application-restricted windows may fail to list or capture.
-- Version 1.5 continues to provide observation only: no mouse clicks, arbitrary
+- Version 1.6 continues to provide observation only: no mouse clicks, arbitrary
   keystrokes, text input, drag operations, authentication interaction, or
   secure-desktop control.
 
@@ -104,4 +121,4 @@ commands, permission changes, external submissions, or other side effects.
 
 Use the repository's **Security** tab to report a vulnerability privately. Do
 not report tunnel runtime keys, window grants, captures, or private logs in a
-public issue. Version 1.5 is the currently supported release.
+public issue. Version 1.6 is the currently supported release.
