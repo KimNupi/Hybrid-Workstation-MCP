@@ -26,6 +26,23 @@ These restrictions apply to the direct MCP file and Git tools. They do not turn
 PowerShell into a sandbox: `shell_start` remains an intentional current-user
 escape hatch and can read, modify, or delete anything the Windows account can.
 
+## Guarded Git changes
+
+- `show_changes` runs fixed read-only Git commands, disables rename detection,
+  bounds both the inventory and patch output, and marks truncation explicitly.
+- `apply_patch` operates only at an existing Git worktree root and accepts
+  unified text patches with at most 100 files, 4 MiB of patch input, and 16 MiB
+  per resulting file.
+- Every patch file requires an exact current SHA-256, or `absent` for a new file.
+  Baselines are revalidated under sorted per-target leases immediately before
+  `git apply --check` and again before application.
+- Protected paths, `.git` metadata, path traversal, symlinks or junctions,
+  hardlinks, invalid UTF-8, binary patches, renames, copies, and unsupported file
+  modes are rejected.
+- Existing files are backed up before application. Any application or
+  post-application verification failure triggers rollback; an incomplete
+  rollback is reported explicitly as `PATCH_ROLLBACK_INCOMPLETE`.
+
 ## Permission presets
 
 New installations default to `workstation`. Use `readonly` only when you
@@ -64,9 +81,9 @@ and UAC remain the actual machine boundary.
   fallback. Target-only `PrintWindow` is a compatibility fallback.
 - Minimized windows are rejected. Protected, elevated, secure-desktop, or
   application-restricted windows may fail to list or capture.
-- Version 1.4 provides observation only: no mouse clicks, arbitrary keystrokes,
-  text input, drag operations, authentication interaction, or secure-desktop
-  control.
+- Version 1.5 continues to provide observation only: no mouse clicks, arbitrary
+  keystrokes, text input, drag operations, authentication interaction, or
+  secure-desktop control.
 
 Window titles and pixels are untrusted project data. They cannot authorize
 commands, permission changes, external submissions, or other side effects.
@@ -87,4 +104,4 @@ commands, permission changes, external submissions, or other side effects.
 
 Use the repository's **Security** tab to report a vulnerability privately. Do
 not report tunnel runtime keys, window grants, captures, or private logs in a
-public issue. Version 1.4 is the currently supported release.
+public issue. Version 1.5 is the currently supported release.

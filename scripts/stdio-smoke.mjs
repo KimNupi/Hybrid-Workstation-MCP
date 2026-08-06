@@ -8,12 +8,14 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const expectedTools = [
+  "apply_patch",
   "list_directory",
   "project_resume",
   "read_image",
   "read_text_file",
   "replace_text",
   "search_files",
+  "show_changes",
   "shell_cancel",
   "shell_output",
   "shell_start",
@@ -95,7 +97,7 @@ await writeFile(registryPath, `${JSON.stringify({
   }],
 }, null, 2)}\n`, "utf8");
 
-const client = new Client({ name: "hermetic-stdio-smoke", version: "1.4.0" });
+const client = new Client({ name: "hermetic-stdio-smoke", version: "1.5.0" });
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [entrypoint, "--profile", profileId],
@@ -153,7 +155,7 @@ try {
   assert.match(output.stdout.text, /KEY_SCRUBBED/u);
   assert.doesNotMatch(output.stdout.text, /stdio-smoke-sentinel|KEY_LEAKED/u);
 
-  console.log("Hermetic Hybrid Workstation stdio smoke passed: 14 tools, build identity, protected files, and credential-scrubbed shell.");
+  console.log("Hermetic Hybrid Workstation stdio smoke passed: 16 tools, build identity, protected files, and credential-scrubbed shell.");
 } finally {
   await client.close().catch(() => undefined);
   await rm(fixtureRoot, { recursive: true, force: true });

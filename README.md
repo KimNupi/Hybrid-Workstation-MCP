@@ -5,23 +5,28 @@ a ChatGPT developer-mode app through OpenAI Secure MCP Tunnel. One profile is
 installed by default; advanced users can register and manage additional,
 non-overlapping profiles.
 
-The package exposes bounded tools for bootstrap context, Git resume snapshots,
-directory and text search, text and image reads, explicitly granted application
-window observation, SHA-guarded UTF-8 writes, and asynchronous PowerShell jobs
-with status, output, and cancellation.
+The package exposes bounded tools for bootstrap context, Git resume and change
+snapshots, directory and text search, text and image reads, explicitly granted
+application window observation, SHA-guarded single-file writes, atomic guarded
+multi-file patches, and asynchronous PowerShell jobs with status, output, and
+cancellation.
 
 ## Release status
 
-Version 1.4 hardens the direct filesystem surface against credential, runtime,
-private-key, browser-profile, and canonical-link access while retaining the
-current-user PowerShell boundary. It also adds `project_resume(path)` for an
-unrelated Git worktree, a checksum-pinned NativeAOT `shell-host` with the prior
-PowerShell Job Object path as fallback, deterministic build/tool-schema IDs,
-lint and coverage gates, bounded directory concurrency, single-pass text
-pagination, and installation-independent stdio, performance, and native-shell
-smokes.
+Version 1.5 adds `show_changes(path)` for bounded staged, unstaged, combined, and
+untracked Git review, plus `apply_patch` for coordinated text-only changes in an
+existing Git workspace. Patch application requires a current bootstrap revision
+and one exact SHA-256 or `absent` expectation per file, runs `git apply --check`,
+rejects protected paths, links, hardlinks, binary content, renames, copies, and
+unsupported file modes, and restores original files if application or
+verification fails. The dependency lock also resolves all currently reported
+moderate-or-higher npm advisories.
 
-Each public server process remains a fourteen-tool, single-profile stdio MCP. It
+Version 1.4 introduced the hardened direct-filesystem boundary,
+`project_resume(path)`, checksum-pinned native shell hosting, deterministic
+build/tool-schema IDs, and the current validation gates.
+
+Each public server process is now a sixteen-tool, single-profile stdio MCP. It
 does not add an HTTP MCP listener. The local manager can inspect registered
 profiles concurrently and start, stop, or restart up to three profiles at a
 time; already active or recovering profiles are skipped by **Connect all**.
@@ -124,12 +129,12 @@ window before capture.
 
 ## Permission presets
 
-- `workstation` (default): normal operation with all fourteen tools. ChatGPT can
-  inspect, observe granted windows, edit, build, test, and run commands as the
-  conversation naturally progresses. A separate mode approval is not required
-  for each task.
-- `readonly`: an optional deliberate lock exposing eight inspection and window-
-  observation tools, with no file mutation or command execution.
+- `workstation` (default): normal operation with all sixteen tools. ChatGPT can
+  inspect, review Git changes, observe granted windows, apply guarded single- or
+  multi-file edits, build, test, and run commands as the conversation naturally
+  progresses. A separate mode approval is not required for each task.
+- `readonly`: an optional deliberate lock exposing nine inspection, Git-review,
+  and window-observation tools, with no file mutation or command execution.
 
 The preset is a coarse connection-level lock, not a per-action confirmation
 system or an operating-system sandbox. The control menu automatically stops and

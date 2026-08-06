@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { showChanges } from "./changes.js";
 import { z } from "zod";
 import {
   listDirectory,
@@ -8,6 +9,7 @@ import {
   searchFiles,
   writeTextFile,
 } from "./filesystem.js";
+import { applyPatch } from "./patch.js";
 import { PERMISSION_PRESETS, type ProjectContext } from "./profile.js";
 import { getProjectResume } from "./resume.js";
 import { cancelShellJob, getShellOutput, getShellStatus, startShellJob } from "./shell.js";
@@ -67,8 +69,8 @@ function serverInstructions(context: ProjectContext): string {
       : `Before the first mutation or shell command, call workstation_context and review every bootstrapEntries item: ${bootstrap}.`,
     context.profile.permissionPreset === "readonly"
       ? "This profile is deliberately locked to inspection only."
-      : "Pass the returned contextRevision to write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
-    "When continuing existing work, call project_resume after workstation_context. Pass path for an unrelated Git worktree and inspect only task-relevant changed files.",
+      : "Pass the returned contextRevision to apply_patch, write_text_file, replace_text, and shell_start. Refresh it after bootstrap files change.",
+    "When continuing existing work, call project_resume after workstation_context. Pass path for an unrelated Git worktree and inspect only task-relevant changed files. Use show_changes after related edits for a bounded structured Git review.",
     context.profile.permissionPreset === "workstation"
       ? "Use direct read and search tools for bounded inspection. When the user asks to change, build, test, or run something, use the available mutation and shell tools directly without asking for a separate mode change."
       : "Use direct read and search tools for bounded inspection.",
@@ -119,7 +121,7 @@ const shellStatusOutputSchema = {
 export function createServer(context: ProjectContext): McpServer {
   const projectName = context.profile.displayName;
   const server = new McpServer(
-    { name: context.profile.serverName, version: "1.4.0" },
+    { name: context.profile.serverName, version: "1.5.0" },
     { instructions: serverInstructions(context) },
   );
   const canWrite = context.profile.permissionPreset === "workstation";
@@ -211,6 +213,46 @@ export function createServer(context: ProjectContext): McpServer {
     },
     async ({ path, recentCommitLimit, maxChangedPaths }) => responseFor(
       await getProjectResume(context, recentCommitLimit, maxChangedPaths, path),
+    ),
+  );
+
+  server.registerTool(
+    "show_changes",
+    {
+      title: "Show Git changes",
+      description: "Summarize staged, unstaged, combined, and untracked changes in the Git repository containing path. This runs fixed read-only Git commands and returns a bounded patch plus structured review data.",
+      inputSchema: {
+        path: PATH_SCHEMA.default("."),
+        maxPatchCharacters: z.number().int().min(1000).max(200_000).default(50_000),
+      },
+      outputSchema: {
+        repositoryRoot: z.string(),
+        head: nullableString,
+        branch: nullableString,
+        generatedAt: z.string(),
+        summary: z.object({
+          files: z.number().int(),
+          additions: z.number().int(),
+          deletions: z.number().int(),
+          stagedFiles: z.number().int(),
+          unstagedFiles: z.number().int(),
+          untrackedFiles: z.number().int(),
+        }),
+        files: z.array(z.object({
+          path: z.string(),
+          scope: z.enum(["staged", "unstaged", "both", "untracked"]),
+          additions: nullableNumber,
+          deletions: nullableNumber,
+          binary: z.boolean(),
+        })),
+        inventoryTruncated: z.boolean(),
+        patch: z.string(),
+        patchTruncated: z.boolean(),
+      },
+      annotations: localReadAnnotations,
+    },
+    async ({ path, maxPatchCharacters }) => responseFor(
+      await showChanges({ context, path, maxPatchCharacters }),
     ),
   );
 
@@ -388,6 +430,42 @@ export function createServer(context: ProjectContext): McpServer {
   );
 
   if (canWrite) {
+    server.registerTool(
+      "apply_patch",
+      {
+        title: "Apply a guarded text patch",
+        description: "Apply coordinated multi-file text changes inside an existing Git workspace after workstation_context. Every patch file requires its exact current SHA-256 or 'absent'. Stale baselines, protected paths, links, hardlinks, binary patches, renames, and partial application are rejected.",
+        inputSchema: {
+          contextRevision: CONTEXT_REVISION_SCHEMA,
+          root: PATH_SCHEMA.default("."),
+          patch: z.string().min(1).max(4 * 1024 * 1024),
+          expectedFiles: z.array(z.object({
+            path: z.string().min(1).max(2048),
+            expectedSha256: z.union([z.literal("absent"), SHA256_SCHEMA]),
+          })).min(1).max(100),
+        },
+        outputSchema: {
+          transactionId: z.string().uuid(),
+          root: z.string(),
+          files: z.array(z.object({
+            path: z.string(),
+            action: z.enum(["add", "update", "delete"]),
+            previousSha256: nullableString,
+            sha256: nullableString,
+            additions: z.number().int(),
+            deletions: z.number().int(),
+          })),
+          additions: z.number().int(),
+          deletions: z.number().int(),
+        },
+        annotations: localWriteAnnotations,
+      },
+      async ({ contextRevision, root, patch, expectedFiles }) => {
+        await assertCurrentContextRevision(context, contextRevision);
+        return responseFor(await applyPatch({ context, root, patch, expectedFiles }));
+      },
+    );
+
     server.registerTool(
     "write_text_file",
     {
